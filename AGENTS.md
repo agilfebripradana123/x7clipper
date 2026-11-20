@@ -111,7 +111,7 @@ web-clipper/
 - [x] Buat modul `worker/src/transcript.js`: parse VTT/SRT -> gabungkan menjadi segmen 6–10 detik `[S{id}|{detik}]` + kembalikan `segmentMap`.
 - [x] Buat modul `worker/src/chunker.js`: pecah transkrip per 15 menit dengan overlap 2 menit untuk video >= 20 menit.
 - [x] Buat modul `worker/src/ninerouter.js`: client `/v1/chat/completions` dengan system prompt standar, strip markdown fence, dan retry 1x jika JSON invalid.
-- [ ] Buat modul `worker/src/validator.js`: validasi skema Zod, Segment-ID grounding, padding (`-0.35s` / `+0.50s`), dan deduplikasi overlap > 50%.
+- [x] Buat modul `worker/src/validator.js`: validasi skema Zod, Segment-ID grounding, padding (`-0.35s` / `+0.50s`), dan deduplikasi overlap > 50%.
 - [ ] Buat CLI runner uji coba (`worker/scripts/test-analyze.js`) dan test pada 1 video 10–15 menit serta 1 podcast > 45 menit.
 
 ### Fase 2: Smart Clipping & Subtitle Shifting
@@ -155,7 +155,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 1 (Pipeline Transkrip & AI Selector)
-- **Tugas Terakhir Selesai:** Modul `worker/src/ninerouter.js` dan unit test (Fase 1 - Item 4)
-- **Tugas Berikutnya:** Buat modul `worker/src/validator.js` (validasi Zod, Segment-ID grounding, padding -0.35s/+0.50s, deduplikasi overlap > 50%)
-- **File Terakhir Diubah:** `worker/src/ninerouter.js`, `worker/test/ninerouter.test.js`, `docs/progress.md`, `AGENTS.md`
-- **Blocker / Catatan:** Binary `yt-dlp` dan `ffmpeg` belum terinstall di Windows host untuk runtime live. Unit test seluruh worker lulus 18/18.
+- **Tugas Terakhir Selesai:** Modul `worker/src/validator.js` dan unit test (Fase 1 - Item 5)
+- **Tugas Berikutnya:** Buat CLI runner `worker/scripts/test-analyze.js`, lalu uji 1 video 10–15 menit dan 1 podcast > 45 menit
+- **File Terakhir Diubah:** `worker/src/validator.js`, `worker/test/validator.test.js`, `docs/progress.md`, `AGENTS.md`
+- **Blocker / Catatan:** Binary `yt-dlp` dan `ffmpeg` belum terinstall di Windows host untuk runtime live. Unit test seluruh worker lulus 26/26.

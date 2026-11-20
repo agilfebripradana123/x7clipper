@@ -80,5 +80,15 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm test` — PASS 18/18 (4 test baru 9router).
 - **Status:** Selesai.
 
+## [2026-11-20] Validator & Deduplikasi Klip (Fase 1 - Item 5)
+- **Tujuan:** Validasi skema Zod pada respons AI, grounding Segment-ID ke float timestamp, penambahan padding pengaman, dan deduplikasi klip.
+- **File ditambahkan:** `worker/src/validator.js`, `worker/test/validator.test.js`.
+- **Kontrak:**
+  - `validateClips(rawClips, segmentMap, videoDuration)` validasi skema via Zod, resolve Segment-ID, tolak durasi < 15s atau > 110s, hitung padding `-0.35s` dan `+0.50s` (clamped).
+  - `deduplicateClips(clips)` deteksi overlap > 50% dari durasi klip terpendek, simpan hanya yang memiliki `viral_score` tertinggi.
+- **Hasil uji:** `npm test` — PASS 26/26 (8 test baru validator).
+- **Status:** Selesai.
+
+
 
 
