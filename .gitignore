@@ -11,6 +11,9 @@ storage/exports/*
 # Legacy worker-local storage created by early CLI runs
 worker/storage/
 
+# Isolated Git worktrees
+.worktrees/
+
 # Dependencies
 node_modules/
 vendor/
