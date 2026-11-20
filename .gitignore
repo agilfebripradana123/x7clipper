@@ -8,6 +8,9 @@ storage/raw-clips/*
 storage/exports/*
 !storage/exports/.gitkeep
 
+# Legacy worker-local storage created by early CLI runs
+worker/storage/
+
 # Dependencies
 node_modules/
 vendor/
