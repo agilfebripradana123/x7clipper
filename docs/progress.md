@@ -48,3 +48,14 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `node --test test/youtube.test.js` — PASS 6/6.
 - **Status:** Selesai.
 
+## [2026-11-20] Parser & Normalizer Transkrip (Fase 1 - Item 2)
+- **Tujuan:** Parse format VTT/SRT, bersihkan tag HTML/rolling captions, dan gabungkan cue menjadi segmen kalimat 6–10 detik `[S{id}|{detik}]` dengan `segmentMap`.
+- **File ditambahkan:** `worker/src/transcript.js`, `worker/test/transcript.test.js`.
+- **Kontrak:**
+  - `parseTimestamp(str)` konversi format `HH:MM:SS.mmm` / `MM:SS.mmm` / koma SRT ke float detik.
+  - `parseTranscript(text)` hasilkan `{ segments, segmentMap, formattedText }`.
+  - Durasi segmen dibatasi 6–10 detik dengan pemenggalan tanda baca kalimat (`.`, `!`, `?`).
+- **Hasil uji:** `node --test` — PASS 10/10 (4 test baru transkrip + 6 test youtube).
+- **Status:** Selesai.
+
+

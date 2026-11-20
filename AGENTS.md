@@ -108,7 +108,7 @@ web-clipper/
 
 ### Fase 1: Pipeline Transkrip & AI Selector (Worker CLI Dulu)
 - [x] Buat modul `worker/src/youtube.js`: ambil metadata JSON dan download subtitle/auto-caption via `yt-dlp`.
-- [ ] Buat modul `worker/src/transcript.js`: parse VTT/SRT -> gabungkan menjadi segmen 6–10 detik `[S{id}|{detik}]` + kembalikan `segmentMap`.
+- [x] Buat modul `worker/src/transcript.js`: parse VTT/SRT -> gabungkan menjadi segmen 6–10 detik `[S{id}|{detik}]` + kembalikan `segmentMap`.
 - [ ] Buat modul `worker/src/chunker.js`: pecah transkrip per 15 menit dengan overlap 2 menit untuk video >= 20 menit.
 - [ ] Buat modul `worker/src/ninerouter.js`: client `/v1/chat/completions` dengan system prompt standar, strip markdown fence, dan retry 1x jika JSON invalid.
 - [ ] Buat modul `worker/src/validator.js`: validasi skema Zod, Segment-ID grounding, padding (`-0.35s` / `+0.50s`), dan deduplikasi overlap > 50%.
@@ -155,7 +155,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 1 (Pipeline Transkrip & AI Selector)
-- **Tugas Terakhir Selesai:** Modul `worker/src/youtube.js` dan unit test (Fase 1 - Item 1)
-- **Tugas Berikutnya:** Buat modul `worker/src/transcript.js` (parse VTT/SRT -> segmen 6–10 detik `[S{id}|{detik}]` + `segmentMap`)
-- **File Terakhir Diubah:** `worker/src/youtube.js`, `worker/test/youtube.test.js`, `worker/package.json`, `docs/progress.md`, `AGENTS.md`
-- **Blocker / Catatan:** Binary `yt-dlp` dan `ffmpeg` belum terinstall di Windows host untuk runtime live, tapi unit test mock lulus 100% (6/6 passing).
+- **Tugas Terakhir Selesai:** Modul `worker/src/transcript.js` dan unit test (Fase 1 - Item 2)
+- **Tugas Berikutnya:** Buat modul `worker/src/chunker.js` (chunk 15 menit dengan overlap 2 menit untuk video >= 20 menit)
+- **File Terakhir Diubah:** `worker/src/transcript.js`, `worker/test/transcript.test.js`, `docs/progress.md`, `AGENTS.md`
+- **Blocker / Catatan:** Binary `yt-dlp` dan `ffmpeg` belum terinstall di Windows host untuk runtime live. Unit test seluruh worker lulus 10/10.
