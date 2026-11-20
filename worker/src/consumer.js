@@ -34,13 +34,21 @@ export async function analyzeProject(job, { db, getMetadata, getTranscript, sele
     await db.markAnalyzing(project.id);
     const chunks = chunkSegments(segments, meta.duration_sec);
     const rawClips = [];
+    let failedChunks = 0;
+    let lastChunkError;
     for (const chunk of chunks) {
       try {
         const result = await selectClips(chunk.formattedText);
         if (Array.isArray(result?.clips)) rawClips.push(...result.clips);
       } catch (error) {
+        failedChunks++;
+        lastChunkError = error;
         log(`chunk ${chunk.chunkIndex} gagal, dilewati: ${error.message}`);
       }
+    }
+    // Semua chunk gagal = 9router/API bermasalah, jangan tandai ready dengan 0 klip.
+    if (failedChunks === chunks.length) {
+      throw new Error(`Semua ${chunks.length} chunk gagal dianalisis: ${lastChunkError.message}`);
     }
 
     const clips = deduplicateClips(validateClips(rawClips, segmentMap, meta.duration_sec));

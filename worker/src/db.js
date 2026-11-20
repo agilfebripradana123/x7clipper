@@ -48,7 +48,12 @@ export function createDb({ config = dbConfigFromEnv(), createPool } = {}) {
     if (!poolPromise) {
       poolPromise = (async () => {
         const factory = createPool ? { createPool } : await import('mysql2/promise');
-        return factory.createPool({ ...config, waitForConnections: true, connectionLimit: 4 });
+        return factory.createPool({
+          ...config,
+          charset: 'UTF8MB4_UNICODE_CI',
+          waitForConnections: true,
+          connectionLimit: 4,
+        });
       })();
     }
     return poolPromise;

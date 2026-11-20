@@ -28,7 +28,7 @@ test('selectClipsFromChunk kirim payload valid ke endpoint 9router', async () =>
     capturedBody = JSON.parse(options.body);
     return {
       ok: true,
-      json: async () => ({
+      text: async () => JSON.stringify({
         choices: [
           {
             message: {
@@ -76,14 +76,14 @@ test('retry 1x otomatis jika respon pertama invalid JSON', async () => {
     if (attempts === 1) {
       return {
         ok: true,
-        json: async () => ({
+        text: async () => JSON.stringify({
           choices: [{ message: { content: 'Bukan json sama sekali' } }],
         }),
       };
     }
     return {
       ok: true,
-      json: async () => ({
+      text: async () => JSON.stringify({
         choices: [
           {
             message: {

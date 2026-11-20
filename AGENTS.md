@@ -70,6 +70,10 @@ web-clipper/
    - Seluruh proses `yt-dlp`, analisis 9router, dan render `FFmpeg` WAJIB berjalan asinkron melalui Redis Queue.
    - Batasi worker render FFmpeg maksimal 1–2 job konkuren agar CPU tidak penuh.
 
+7. **DILARANG Menjalankan Daemon dari Shell Agent:**
+   - JANGAN pernah menjalankan `node src/consumer.js`, `php artisan serve`, atau daemon/background process apa pun lewat `Start-Process`/`&`/`nohup` di shell tool. Pipe terminal menggantung dan proses jadi tak terkendali.
+   - Server backend dan worker consumer SELALU dijalankan manual oleh user di terminal terpisah. Agent cukup mengirim job ke Redis atau memanggil endpoint HTTP.
+
 ---
 
 ## 3. Kontrak JSON & System Prompt Standar 9router
@@ -156,6 +160,10 @@ web-clipper/
 - `2026-11-20`: Worker update DB langsung (Opsi A) lewat satu modul `worker/src/db.js` (`mysql2/promise`) supaya mudah diganti HTTP callback bila worker dipisah ke VPS. Insert `clips` + `projects.status='ready'` dalam satu transaksi, `created_at`/`updated_at` = `NOW()`, kolom JSON via `JSON.stringify()`.
 - `2026-11-20`: `phpunit.xml` mengarah ke database test terpisah `x7clip_test` (host 127.0.0.1:3307) agar `RefreshDatabase` tidak menghapus data riil `x7clip`.
 - `2026-11-20`: Retry job analisis maks 3 attempt (`attempt` di payload); gagal -> `status=failed` + `error_message`, retry -> `status=queued` + requeue ke `x7:jobs`.
+- `2026-11-20`: `ninerouter.js` membaca body respons sebagai teks lalu coba `JSON.parse`, fallback `parseResponseText` (SSE). Sebelumnya `response.json()` throw saat 9router kirim body SSE walau `content-type: application/json`; error itu ditelan loop chunk sehingga project bisa `ready` dengan `clips=0`.
+- `2026-11-20`: `consumer.js` wajib `throw` jika SEMUA chunk gagal dianalisis (masuk retry/failed + `error_message`), supaya kegagalan 9router tidak pernah tersamar jadi `status=ready` tanpa klip. `clips=0` hanya sah jika AI benar-benar mengembalikan `"clips": []`.
+- `2026-11-20`: Pool `mysql2` menyetel `charset: 'UTF8MB4_UNICODE_CI'` eksplisit (nama collation, bukan `'utf8mb4'` yang ditolak mysql2) agar judul/caption ber-emoji aman di MariaDB `utf8mb4`.
+- `2026-11-20`: Agent DILARANG menjalankan daemon (`node src/consumer.js`, `php artisan serve`, dll.) via shell tool; user menjalankannya manual di terminal terpisah (Bagian 2 item 7).
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
@@ -163,7 +171,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 3 (Backend API, Database & Redis Queue)
-- **Tugas Terakhir Selesai:** `GET /api/projects/{id}` (status + daftar klip urut `viral_score`) dan consumer worker `worker/src/consumer.js` + `worker/src/db.js` — pipeline analisis end-to-end (Fase 3 Item 3 & Item 7 tuntas).
-- **Tugas Berikutnya:** `POST /api/clips/{id}/prepare` (smart clipping on-demand + job `prepare_clip`), lalu `PATCH /api/clips/{id}/config`, lalu `POST /api/clips/{id}/render` + `GET /api/render-jobs/{id}` (Fase 3 Item 4–6).
-- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/ProjectController.php`, `backend/routes/api.php`, `backend/phpunit.xml`, `backend/tests/Feature/Api/ProjectShowApiTest.php`, `backend/tests/Feature/DatabaseConnectionTest.php`, `backend/.env{,.example}`, `worker/src/{consumer,db,env}.js`, `worker/test/{consumer,youtube}.test.js`, `worker/package.json`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Verifikasi: `php artisan test` PASS 11/11 (46 assertions) memakai `x7clip_test`; `npm test` PASS 40/40; Redis key literal `x7:jobs` terkonfirmasi (tanpa prefix). Worker butuh `.env` root terisi `NINEROUTER_*` + `DB_*` sebelum `npm run consumer` dijalankan riil.
+- **Tugas Terakhir Selesai:** E2E riil 1 URL (`hXOo7FdQVrk`, 1104s) via Laravel -> Redis -> consumer -> 9router -> MariaDB: project `ready` + 4 klip tersimpan. Sekalian fix `ninerouter.js` (parse body teks + fallback SSE) dan guard `consumer.js` (semua chunk gagal -> throw, bukan `ready` + 0 klip). `charset` mysql2 eksplisit `UTF8MB4_UNICODE_CI`.
+- **Tugas Berikutnya:** `POST /api/clips/{id}/prepare` idempoten + kolom `prepare_status`/`prepare_error`, plus `GET /api/clips/{id}/video` (`response()->file()`, dukung Range 206) — Fase 3 Item 4.
+- **File Terakhir Diubah:** `worker/src/{ninerouter,consumer,db}.js`, `worker/test/ninerouter.test.js`, `AGENTS.md`.
+- **Blocker / Catatan:** `npm test` PASS 40/40. Verifikasi E2E: requeue project 8 via `x7:jobs` -> `analyzing` -> `ready` + 4 klip. 9router saat dicek membalas `application/json` normal; kegagalan lama tidak terekam karena log consumer user tidak tersimpan (indikasi kuat: respons 9router gagal parse/HTTP error lalu di-skip diam-diam). Consumer user (PID baru) sudah memakai kode fix.

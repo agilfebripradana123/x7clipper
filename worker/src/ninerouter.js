@@ -97,15 +97,16 @@ export async function selectClipsFromChunk(formattedText, {
       throw new NineRouterError(`9router HTTP ${response.status}: ${text}`, response.status);
     }
 
-    const contentType = response.headers?.get?.('content-type') || '';
+    // 9router kadang balas SSE walau stream:false, jadi jangan percaya content-type.
+    const text = await response.text();
     let content;
-    if (contentType.includes('text/event-stream')) {
-      content = parseResponseText(await response.text());
-    } else {
-      const data = await response.json();
+    try {
+      const data = JSON.parse(text);
       content = data.choices?.[0]?.message?.content ?? '';
-      if (content.trim().startsWith('data:')) content = parseResponseText(content);
+    } catch {
+      content = parseResponseText(text);
     }
+    if (content.trim().startsWith('data:')) content = parseResponseText(content);
     const cleaned = cleanJsonString(content);
 
     try {
