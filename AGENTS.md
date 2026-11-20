@@ -115,7 +115,7 @@ web-clipper/
 - [x] Buat CLI runner uji coba (`worker/scripts/test-analyze.js`) dan test pada 1 video 10–15 menit serta 1 podcast > 45 menit.
 
 ### Fase 2: Smart Clipping & Subtitle Shifting
-- [ ] Buat modul `worker/src/clipper.js`: potong segmen parsial via `yt-dlp --download-sections` + rapikan keyframe via FFmpeg.
+- [x] Buat modul `worker/src/clipper.js`: potong segmen parsial via `yt-dlp --download-sections` + rapikan keyframe via FFmpeg.
 - [ ] Buat modul `worker/src/subtitleShift.js`: ambil irisan transkrip sesuai `start_sec..end_sec` dan geser timestamp mundur agar mulai dari `00:00` (output JSON & `.srt`/`.ass`).
 - [ ] Uji pemutaran hasil `.mp4` klip di browser (pastikan audio sinkron dan tidak freeze di 2 detik awal).
 
@@ -156,7 +156,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 2 (Smart Clipping & Subtitle Shifting)
-- **Tugas Terakhir Selesai:** Fase 1 lengkap: pipeline diuji pada video 15 menit dan podcast 53 menit.
-- **Tugas Berikutnya:** Buat modul `worker/src/clipper.js` (yt-dlp `--download-sections` + re-encode FFmpeg).
-- **File Terakhir Diubah:** `worker/src/ninerouter.js`, `worker/scripts/healthcheck.js`, `worker/src/youtube.js`, `docs/progress.md`, `AGENTS.md`
-- **Blocker / Catatan:** Runtime siap: yt-dlp, FFmpeg, ffprobe, Redis, 9router seluruhnya lulus healthcheck. Parser SSE ditambahkan karena model combo dapat mengabaikan `stream: false`. Unit test 27/27 lulus; uji riil 1 video 15m + 1 podcast 53m lulus.
+- **Tugas Terakhir Selesai:** Modul `worker/src/clipper.js` dan uji potong parsial nyata (Fase 2 - Item 1).
+- **Tugas Berikutnya:** Buat modul `worker/src/subtitleShift.js` (irisan transkrip dan geser timestamp ke `00:00`).
+- **File Terakhir Diubah:** `worker/src/clipper.js`, `worker/test/clipper.test.js`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Uji live potongan 15 detik berhasil: h264 1080p + aac, durasi tepat 15s, 5.02 MB. Test worker 29/29 lulus.

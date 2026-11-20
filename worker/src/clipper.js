@@ -1,0 +1,102 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdir, readFile, stat as fsStat, unlink as fsUnlink } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+
+const execFileAsync = promisify(execFile);
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const defaultTempDir = resolve(projectRoot, 'storage/tmp');
+const defaultOutputDir = resolve(projectRoot, 'storage/raw-clips');
+
+// Load environment dari root .env jika ada
+async function ensureEnv() {
+  try {
+    const text = await readFile(resolve(projectRoot, '.env'), 'utf-8');
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq < 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      const val = trimmed.slice(eq + 1).trim();
+      if (!process.env[key]) process.env[key] = val;
+    }
+  } catch { /* ignore */ }
+}
+await ensureEnv();
+
+function bin(name, fallback) {
+  return process.env[name] || fallback;
+}
+
+/**
+ * Download potongan segmen parsial via yt-dlp --download-sections
+ * lalu rapikan keyframe via FFmpeg (libx264 + aac + movflags +faststart)
+ * agar browser langsung memutar tanpa freeze.
+ */
+export async function clipSegment(url, startSec, endSec, {
+  clipId = randomUUID(),
+  tempDir = defaultTempDir,
+  outputDir = defaultOutputDir,
+  ytdlp = bin('YTDLP_PATH', 'yt-dlp'),
+  ffmpeg = bin('FFMPEG_PATH', 'ffmpeg'),
+  run = execFileAsync,
+  stat = fsStat,
+  unlink = fsUnlink,
+  makeDir = mkdir,
+} = {}) {
+  if (typeof startSec !== 'number' || typeof endSec !== 'number') {
+    throw new TypeError('startSec dan endSec harus number');
+  }
+  if (startSec < 0 || endSec <= startSec) {
+    throw new RangeError(`Rentang clip tidak valid: startSec=${startSec}, endSec=${endSec}`);
+  }
+
+  await makeDir(tempDir, { recursive: true });
+  await makeDir(outputDir, { recursive: true });
+
+  const tempFile = resolve(tempDir, `temp-${clipId}.mp4`);
+  const finalFile = resolve(outputDir, `${clipId}.mp4`);
+  const sectionSpec = `*${startSec}-${endSec}`;
+
+  // 1. Download potongan segmen parsial via yt-dlp
+  const ytdlpArgs = [
+    '--download-sections', sectionSpec,
+    '--force-keyframes-at-cuts',
+    '--ffmpeg-location', dirname(ffmpeg),
+    '--no-playlist',
+    '-f', 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best',
+    '-o', tempFile,
+    url,
+  ];
+
+  await run(ytdlp, ytdlpArgs, { timeout: 180_000, maxBuffer: 10 * 1024 * 1024 });
+
+  // 2. Re-encode awal via FFmpeg agar keyframe bersih dan ada +faststart
+  const ffmpegArgs = [
+    '-y',
+    '-i', tempFile,
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-c:a', 'aac',
+    '-movflags', '+faststart',
+    finalFile,
+  ];
+
+  try {
+    await run(ffmpeg, ffmpegArgs, { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
+  } finally {
+    try { await unlink(tempFile); } catch { /* ignore jika temp gagal dihapus */ }
+  }
+
+  const fileInfo = await stat(finalFile);
+  const durationSec = Number((endSec - startSec).toFixed(2));
+
+  return {
+    clipPath: finalFile,
+    durationSec,
+    sizeBytes: fileInfo.size,
+  };
+}
