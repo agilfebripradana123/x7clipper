@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "x7clip-worker",
   "version": "0.1.0",
   "private": true,
@@ -6,10 +6,12 @@
   "scripts": {
     "healthcheck": "node scripts/healthcheck.js",
     "test": "node --test test/**/*.test.js",
-    "analyze": "node scripts/test-analyze.js"
+    "analyze": "node scripts/test-analyze.js",
+    "consumer": "node src/consumer.js"
   },
   "dependencies": {
     "ioredis": "^5.4.1",
+    "mysql2": "^3.11.5",
     "zod": "^3.23.8"
   }
 }

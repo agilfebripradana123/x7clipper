@@ -100,9 +100,9 @@ test('path relatif transcript diarahkan ke storage root proyek', async () => {
     transcriptsDir: 'storage/transcripts',
   });
 
-  assert.match(result.filePath.replace(/\\/g, '/'), /x7clip\/storage\/transcripts\/dQw4w9WgXcQ\.id\.vtt$/);
+  assert.match(result.filePath.replace(/\\/g, '/'), /\/storage\/transcripts\/dQw4w9WgXcQ\.id\.vtt$/);
   const output = calls[1].args.at(-2).replace(/\\/g, '/');
-  assert.match(output, /x7clip\/storage\/transcripts\/%\(id\)s\.%\(ext\)s$/);
+  assert.match(output, /\/storage\/transcripts\/%\(id\)s\.%\(ext\)s$/);
 });
 
 test('fallback ke auto-caption jika manual tidak ada', async () => {

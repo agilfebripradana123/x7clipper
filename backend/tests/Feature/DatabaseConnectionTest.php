@@ -10,7 +10,7 @@ class DatabaseConnectionTest extends TestCase
     public function test_can_connect_to_mysql_database(): void
     {
         $databaseName = DB::connection()->getDatabaseName();
-        $this->assertEquals('x7clip', $databaseName);
+        $this->assertEquals('x7clip_test', $databaseName);
 
         $result = DB::select('SELECT 1 as connected');
         $this->assertEquals(1, $result[0]->connected);

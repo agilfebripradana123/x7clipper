@@ -122,11 +122,11 @@ web-clipper/
 ### Fase 3: Backend API, Database & Redis Queue
 - [x] Buat migrasi & model database untuk `projects`, `clips`, dan `render_jobs` sesuai `PRD.md`.
 - [x] Buat endpoint `POST /api/projects` (validasi URL -> simpan project -> push job analisis ke Redis).
-- [ ] Buat endpoint `GET /api/projects/{id}` (kembalikan status pipeline + daftar `clips`).
+- [x] Buat endpoint `GET /api/projects/{id}` (kembalikan status pipeline + daftar `clips`).
 - [ ] Buat endpoint `POST /api/clips/{id}/prepare` (push job smart clipping untuk klip yang dipilih user).
 - [ ] Buat endpoint `PATCH /api/clips/{id}/config` (simpan `edit_config_json` dan revisi `subtitle_json`).
 - [ ] Buat endpoint `POST /api/clips/{id}/render` dan `GET /api/render-jobs/{id}` (antrean render final + polling progres).
-- [ ] Hubungkan consumer Redis Queue di `worker/` agar mendengarkan job dari Backend dan mengupdate status/progres ke API/DB.
+- [x] Hubungkan consumer Redis Queue di `worker/` agar mendengarkan job dari Backend dan mengupdate status/progres ke API/DB.
 
 ### Fase 4: Frontend & Web Video Editor
 - [ ] Setup React + Vite + Tailwind + API client dan halaman Input URL YouTube + status tracker pipeline.
@@ -152,6 +152,10 @@ web-clipper/
 - `2026-11-20`: DB development lokal = XAMPP MariaDB 10.4 di `127.0.0.1:3307` (bukan 3306), database `x7clip`, user `root` tanpa password; `backend/.env` dan `phpunit.xml` memakai koneksi ini.
 - `2026-11-20`: Path subtitle relatif selalu di-resolve terhadap root proyek, bukan current working directory worker, agar runtime CLI menyimpan output di `storage/transcripts/`.
 - `2026-11-20`: Job queue Backend -> Worker memakai list Redis mentah `x7:jobs` berisi JSON `{"type":"analyze_project","project_id":<id>,"attempt":1}` (bukan payload queue Laravel). Client Redis = `predis/predis` karena ekstensi phpredis tidak tersedia di PHP XAMPP.
+- `2026-11-20`: `REDIS_PREFIX=` dikosongkan agar predis tidak menambah prefix diam-diam; key `x7:jobs` dibaca persis sama oleh `BRPOP` Node (diverifikasi `redis-cli keys *jobs*`).
+- `2026-11-20`: Worker update DB langsung (Opsi A) lewat satu modul `worker/src/db.js` (`mysql2/promise`) supaya mudah diganti HTTP callback bila worker dipisah ke VPS. Insert `clips` + `projects.status='ready'` dalam satu transaksi, `created_at`/`updated_at` = `NOW()`, kolom JSON via `JSON.stringify()`.
+- `2026-11-20`: `phpunit.xml` mengarah ke database test terpisah `x7clip_test` (host 127.0.0.1:3307) agar `RefreshDatabase` tidak menghapus data riil `x7clip`.
+- `2026-11-20`: Retry job analisis maks 3 attempt (`attempt` di payload); gagal -> `status=failed` + `error_message`, retry -> `status=queued` + requeue ke `x7:jobs`.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
@@ -159,7 +163,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 3 (Backend API, Database & Redis Queue)
-- **Tugas Terakhir Selesai:** Endpoint `POST /api/projects` — validasi URL YouTube, simpan project `queued`, push job `analyze_project` ke list Redis `x7:jobs` (Fase 3 Item 2 tuntas, test 9/9 pass).
-- **Tugas Berikutnya:** Endpoint `GET /api/projects/{id}` (status pipeline + daftar `clips`) lalu consumer worker `worker/src/consumer.js` sebagai penutup Fase 3 (Fase 3 - Item 3).
-- **File Terakhir Diubah:** `backend/app/Support/JobQueue.php`, `backend/app/Http/Requests/StoreProjectRequest.php`, `backend/app/Http/Controllers/Api/ProjectController.php`, `backend/routes/api.php`, `backend/bootstrap/app.php`, `backend/tests/Feature/Api/ProjectApiTest.php`, `backend/.env{,.example}`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Fase 3 Item 2 tuntas: predis terpasang (`v3.7.1`), `REDIS_CLIENT=predis`, `POST /api/projects` 201 + job JSON masuk `x7:jobs`, invalid URL 422, Redis push gagal -> status `failed` + 503. `php artisan test` PASS 9/9 (35 assertions). Lanjut `GET /api/projects/{id}` + consumer worker.
+- **Tugas Terakhir Selesai:** `GET /api/projects/{id}` (status + daftar klip urut `viral_score`) dan consumer worker `worker/src/consumer.js` + `worker/src/db.js` — pipeline analisis end-to-end (Fase 3 Item 3 & Item 7 tuntas).
+- **Tugas Berikutnya:** `POST /api/clips/{id}/prepare` (smart clipping on-demand + job `prepare_clip`), lalu `PATCH /api/clips/{id}/config`, lalu `POST /api/clips/{id}/render` + `GET /api/render-jobs/{id}` (Fase 3 Item 4–6).
+- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/ProjectController.php`, `backend/routes/api.php`, `backend/phpunit.xml`, `backend/tests/Feature/Api/ProjectShowApiTest.php`, `backend/tests/Feature/DatabaseConnectionTest.php`, `backend/.env{,.example}`, `worker/src/{consumer,db,env}.js`, `worker/test/{consumer,youtube}.test.js`, `worker/package.json`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Verifikasi: `php artisan test` PASS 11/11 (46 assertions) memakai `x7clip_test`; `npm test` PASS 40/40; Redis key literal `x7:jobs` terkonfirmasi (tanpa prefix). Worker butuh `.env` root terisi `NINEROUTER_*` + `DB_*` sebelum `npm run consumer` dijalankan riil.

@@ -160,6 +160,32 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `php artisan route:list --path=api` — `POST api/projects` -> `Api\ProjectController@store` (1 route).
 - **Status:** Selesai (Fase 3 Item 2 tuntas).
 
+## [2026-11-20] Endpoint GET /api/projects/{id} (Fase 3 - Item 3)
+- **Tujuan:** Kembalikan status pipeline project + daftar klip rekomendasi untuk polling frontend.
+- **File diubah:**
+  - `backend/app/Http/Controllers/Api/ProjectController.php` — `show()` eager-load `clips` urut `viral_score` DESC.
+  - `backend/routes/api.php` — `GET /api/projects/{project}`.
+  - `backend/tests/Feature/Api/ProjectShowApiTest.php` — 404 project tak dikenal + 200 dengan urutan skor & presisi desimal.
+- **Respons:** `{"data":{id, youtube_url, video_title, duration_sec, status, error_message, created_at, clips:[{id,title,start_sec,end_sec,viral_score,hook_type,ai_reason,suggested_caption,raw_clip_path}]}}`.
+- **Hasil uji:** `php artisan test` — **PASS 11/11 tests, 46 assertions**.
+- **Status:** Selesai (Fase 3 Item 3 tuntas).
+
+## [2026-11-20] Consumer Redis Worker (Fase 3 - Item 7)
+- **Tujuan:** Worker Node mendengarkan list Redis `x7:jobs`, menjalankan pipeline analisis, dan menulis hasil ke DB.
+- **File ditambahkan/diubah:**
+  - `worker/src/consumer.js` — `BRPOP x7:jobs` (literal, tanpa prefix), dispatch `analyze_project`, retry maks 3 attempt (`attempt` +1 di-requeue), status `extracting` -> `analyzing` -> `ready`/`failed`.
+  - `worker/src/db.js` — satu-satunya modul MySQL (`mysql2/promise`): `markExtracting`, `saveTranscript`, `markAnalyzing`, `markQueued`, `failProject`, `saveClipsAndReady`.
+  - `worker/src/env.js` — loader `.env` sederhana untuk runtime worker.
+  - `worker/test/consumer.test.js` — 6 test (happy path, project hilang, requeue, failed, tipe job tak dikenal, serialisasi params DB).
+  - `worker/package.json` — dependency `mysql2` + script `npm run consumer`.
+- **Guardrail yang diterapkan:**
+  - Query MySQL terisolasi di `worker/src/db.js` (mudah diganti HTTP callback).
+  - `REDIS_PREFIX=` kosong di `backend/.env{,.example}`; diverifikasi `redis-cli keys *jobs*` hanya `x7:jobs`.
+  - Test backend memakai database terpisah `x7clip_test` lewat `phpunit.xml`.
+  - Insert `clips` + update `projects.status='ready'` dalam satu transaksi; `created_at`/`updated_at` diisi `NOW()`; kolom JSON diserialisasi `JSON.stringify()`.
+- **Hasil uji:** `npm test` — **PASS 40/40** (34 test lama + 6 test consumer).
+- **Status:** Selesai (Fase 3 Item 7 tuntas).
+
 
 
 
