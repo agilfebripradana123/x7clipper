@@ -26,14 +26,36 @@ FORMAT OUTPUT:
   ]
 }`;
 
-/** Bersihkan markdown fence dan teks preamble dari respons LLM. */
 export function cleanJsonString(raw) {
   const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
   if (fenceMatch) return fenceMatch[1].trim();
-  // Coba ambil JSON object mentah
   const braceMatch = raw.match(/(\{[\s\S]*\})/);
   if (braceMatch) return braceMatch[1].trim();
   return raw.trim();
+}
+
+/** Parse teks respons: handle jika server mengembalikan Server-Sent Events (SSE) data: {...} */
+export function parseResponseText(text) {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('data:')) {
+    const data = JSON.parse(trimmed);
+    return data.choices?.[0]?.message?.content ?? '';
+  }
+
+  // Akumulasi streaming SSE chunk
+  let fullContent = '';
+  for (const line of trimmed.split(/\r?\n/)) {
+    const s = line.trim();
+    if (!s.startsWith('data:')) continue;
+    const payload = s.slice(5).trim();
+    if (!payload || payload === '[DONE]') continue;
+    try {
+      const chunk = JSON.parse(payload);
+      const delta = chunk.choices?.[0]?.delta?.content ?? chunk.choices?.[0]?.message?.content ?? '';
+      fullContent += delta;
+    } catch { /* skip chunk malform */ }
+  }
+  return fullContent;
 }
 
 /**
@@ -50,6 +72,7 @@ export async function selectClipsFromChunk(formattedText, {
   const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
   const body = {
     model,
+    stream: false,
     temperature: 0.2,
     response_format: { type: 'json_object' },
     messages: [
@@ -74,8 +97,15 @@ export async function selectClipsFromChunk(formattedText, {
       throw new NineRouterError(`9router HTTP ${response.status}: ${text}`, response.status);
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content ?? '';
+    const contentType = response.headers?.get?.('content-type') || '';
+    let content;
+    if (contentType.includes('text/event-stream')) {
+      content = parseResponseText(await response.text());
+    } else {
+      const data = await response.json();
+      content = data.choices?.[0]?.message?.content ?? '';
+      if (content.trim().startsWith('data:')) content = parseResponseText(content);
+    }
     const cleaned = cleanJsonString(content);
 
     try {

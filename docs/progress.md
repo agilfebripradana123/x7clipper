@@ -89,11 +89,16 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm test` — PASS 26/26 (8 test baru validator).
 - **Status:** Selesai.
 
-## [2026-11-20] CLI Runner Analisis (Fase 1 - Item 6)
+## [2026-11-20] CLI Runner Analisis & Uji Riil End-to-End (Fase 1 - Item 6)
 - **Tujuan:** Pipeline lengkap dari URL YouTube -> metadata -> transkrip -> chunker -> 9router -> validator -> deduplikasi -> output JSON.
-- **File ditambahkan:** `worker/scripts/test-analyze.js`, npm script `"analyze": "node scripts/test-analyze.js"`.
-- **Hasil verifikasi:** `npm test` — PASS 26/26. NPM test dibatasi ke `test/**/*.test.js` supaya CLI tidak ikut dijalankan sebagai test.
-- **Blocker eksekusi nyata:** Memerlukan binary `yt-dlp` terpasang di host dan file `.env` berisi `NINEROUTER_API_KEY` serta model untuk menjalankan uji coba 2 video (10-15m & >45m).
+- **File ditambahkan/diperbarui:** `worker/scripts/test-analyze.js`, `worker/src/ninerouter.js` (parser SSE chunking), `worker/scripts/healthcheck.js`.
+- **Hasil uji unit test:** `npm test` — PASS 27/27.
+- **Hasil uji video nyata:**
+  1. *Video Camping 15 menit* (`N-zq0SfitcQ`): 1 chunk utuh -> AI mengenali video minim dialog substantif -> return 0 klip (sesuai spesifikasi PRD).
+  2. *Podcast Dokter Tirta 53 menit* (`6QyRGE6Cg8E`): 4 chunk sliding window -> 13 klip mentah -> 11 klip final lolos validasi Segment-ID + safety padding + deduplikasi (skor viral 82–95/100). File disimpan di `storage/tmp/analysis-6QyRGE6Cg8E.json`.
+- **Status:** Selesai (Fase 1 tuntas 100%).
+
+
 
 
 

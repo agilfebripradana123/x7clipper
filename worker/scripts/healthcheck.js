@@ -1,7 +1,23 @@
 import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+
+async function loadEnv() {
+  try {
+    const text = await readFile(resolve(projectRoot, '.env'), 'utf8');
+    for (const line of text.split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (match && !match[2].startsWith('#') && !process.env[match[1]]) process.env[match[1]] = match[2];
+    }
+  } catch { /* environment variables may be supplied by process manager */ }
+}
+
+await loadEnv();
 const required = ['NINEROUTER_BASE_URL', 'NINEROUTER_API_KEY', 'NINEROUTER_MODEL'];
 const binaryChecks = [
   ['yt-dlp', process.env.YTDLP_PATH ?? 'yt-dlp', ['--version']],

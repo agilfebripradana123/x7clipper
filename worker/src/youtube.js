@@ -1,11 +1,14 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, mkdir } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
 const YT_URL_RE = /^https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|live\/|shorts\/)|youtu\.be\/)([\w-]{11})/;
 const LANGUAGES = ['id', 'en'];
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const defaultStorageDir = resolve(projectRoot, 'storage/transcripts');
 
 export class InvalidUrlError extends Error { constructor(url) { super(`URL YouTube tidak valid: ${url}`); this.name = 'InvalidUrlError'; } }
 export class VideoTooShortError extends Error { constructor(sec) { super(`Video terlalu pendek: ${sec}s (min 60s)`); this.name = 'VideoTooShortError'; } }
@@ -45,7 +48,7 @@ export async function getVideoMetadata(url, { run = execFileAsync } = {}) {
 }
 
 /** Download satu transkrip VTT. Prioritas: manual id/en, lalu auto id/en. */
-export async function downloadTranscript(url, { transcriptsDir = process.env.STORAGE_TRANSCRIPTS || './storage/transcripts', run = execFileAsync, read = readFile, makeDir = mkdir } = {}) {
+export async function downloadTranscript(url, { transcriptsDir = process.env.STORAGE_TRANSCRIPTS || defaultStorageDir, run = execFileAsync, read = readFile, makeDir = mkdir } = {}) {
   const videoId = videoIdFromUrl(url);
   const { stdout } = await runYtDlp(['--dump-json', '--no-playlist', url], run);
   let info;

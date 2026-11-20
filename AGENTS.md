@@ -112,7 +112,7 @@ web-clipper/
 - [x] Buat modul `worker/src/chunker.js`: pecah transkrip per 15 menit dengan overlap 2 menit untuk video >= 20 menit.
 - [x] Buat modul `worker/src/ninerouter.js`: client `/v1/chat/completions` dengan system prompt standar, strip markdown fence, dan retry 1x jika JSON invalid.
 - [x] Buat modul `worker/src/validator.js`: validasi skema Zod, Segment-ID grounding, padding (`-0.35s` / `+0.50s`), dan deduplikasi overlap > 50%.
-- [ ] Buat CLI runner uji coba (`worker/scripts/test-analyze.js`) dan test pada 1 video 10–15 menit serta 1 podcast > 45 menit.
+- [x] Buat CLI runner uji coba (`worker/scripts/test-analyze.js`) dan test pada 1 video 10–15 menit serta 1 podcast > 45 menit.
 
 ### Fase 2: Smart Clipping & Subtitle Shifting
 - [ ] Buat modul `worker/src/clipper.js`: potong segmen parsial via `yt-dlp --download-sections` + rapikan keyframe via FFmpeg.
@@ -148,14 +148,15 @@ web-clipper/
 - `2026-11-20`: Menggunakan **9router** untuk fleksibilitas routing & fallback LLM murah ber-context panjang.
 - `2026-11-20`: Menetapkan **Segment-ID Anchoring** (`[S{id}|{detik}]`) untuk menghilangkan halusinasi timestamp LLM.
 - `2026-11-20`: Memisahkan `worker/` (Node.js) dari `backend/` agar mudah dipindahkan ke VPS khusus FFmpeg saat produksi.
+- `2026-11-20`: 9router dipakai secara lokal melalui `http://localhost:20128/v1`; combo `bansossss` dapat mengembalikan SSE walau request `stream: false`, jadi worker mem-parsing respons JSON dan SSE.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 1 (Pipeline Transkrip & AI Selector)
-- **Tugas Terakhir Selesai:** CLI runner `worker/scripts/test-analyze.js` (Fase 1 - Item 6, kode selesai)
-- **Tugas Berikutnya:** Install `yt-dlp` + `ffmpeg` di PATH dan isi `.env` untuk uji video nyata; setelah itu Fase 2 (Smart Clipping)
-- **File Terakhir Diubah:** `worker/scripts/test-analyze.js`, `worker/package.json`, `docs/progress.md`, `AGENTS.md`
-- **Blocker / Catatan:** `yt-dlp` ENOENT saat uji runtime. Kode pipeline Fase 1 lengkap. Uji riil tertunda sampai binary dan `.env` tersedia. Test: 26/26 pass.
+- **Fase Aktif:** Fase 2 (Smart Clipping & Subtitle Shifting)
+- **Tugas Terakhir Selesai:** Fase 1 lengkap: pipeline diuji pada video 15 menit dan podcast 53 menit.
+- **Tugas Berikutnya:** Buat modul `worker/src/clipper.js` (yt-dlp `--download-sections` + re-encode FFmpeg).
+- **File Terakhir Diubah:** `worker/src/ninerouter.js`, `worker/scripts/healthcheck.js`, `worker/src/youtube.js`, `docs/progress.md`, `AGENTS.md`
+- **Blocker / Catatan:** Runtime siap: yt-dlp, FFmpeg, ffprobe, Redis, 9router seluruhnya lulus healthcheck. Parser SSE ditambahkan karena model combo dapat mengabaikan `stream: false`. Unit test 27/27 lulus; uji riil 1 video 15m + 1 podcast 53m lulus.

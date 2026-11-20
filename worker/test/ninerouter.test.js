@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanJsonString, selectClipsFromChunk, NineRouterError } from '../src/ninerouter.js';
+import { cleanJsonString, parseResponseText, selectClipsFromChunk, NineRouterError } from '../src/ninerouter.js';
 
 test('cleanJsonString bersihkan code fence markdown dan whitespace', () => {
   const fenced = '```json\n{"chunk_summary":"topik","clips":[]}\n```';
@@ -8,6 +8,15 @@ test('cleanJsonString bersihkan code fence markdown dan whitespace', () => {
 
   const withPreamble = 'Berikut hasil analisis:\n```\n{"chunk_summary":"topik","clips":[]}\n```\nSemoga membantu!';
   assert.equal(cleanJsonString(withPreamble), '{"chunk_summary":"topik","clips":[]}');
+});
+
+test('parseResponseText gabungkan chunk Server-Sent Events', () => {
+  const sse = [
+    'data: {"choices":[{"delta":{"content":"{\\\"chunk_"}}]}',
+    'data: {"choices":[{"delta":{"content":"summary\\\":\\\"ok\\\",\\\"clips\\\":[]}"}}]}',
+    'data: [DONE]',
+  ].join('\n');
+  assert.equal(parseResponseText(sse), '{"chunk_summary":"ok","clips":[]}');
 });
 
 test('selectClipsFromChunk kirim payload valid ke endpoint 9router', async () => {
