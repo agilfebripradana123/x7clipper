@@ -69,5 +69,16 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `node --test` — PASS 14/14 (4 test baru chunker).
 - **Status:** Selesai.
 
+## [2026-11-20] Client 9router (Fase 1 - Item 4)
+- **Tujuan:** Kirim transkrip chunk ke endpoint OpenAI-compatible 9router untuk seleksi momen klip.
+- **File ditambahkan:** `worker/src/ninerouter.js`, `worker/test/ninerouter.test.js`.
+- **Kontrak:**
+  - `selectClipsFromChunk(formattedText, options)` kirim ke `/v1/chat/completions`.
+  - Request wajib memakai `temperature: 0.2` dan `response_format: { type: "json_object" }`.
+  - System prompt mewajibkan 1–4 momen, hook/penutup kuat, dan Segment-ID grounding.
+  - `cleanJsonString()` menghapus markdown code fence/preamble dan retry 1x jika `JSON.parse()` gagal.
+- **Hasil uji:** `npm test` — PASS 18/18 (4 test baru 9router).
+- **Status:** Selesai.
+
 
 
