@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "healthcheck": "node scripts/healthcheck.js",
-    "test": "node --test"
+    "test": "node --test test/**/*.test.js",
+    "analyze": "node scripts/test-analyze.js"
   },
   "dependencies": {
     "ioredis": "^5.4.1",

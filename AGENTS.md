@@ -155,7 +155,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 1 (Pipeline Transkrip & AI Selector)
-- **Tugas Terakhir Selesai:** Modul `worker/src/validator.js` dan unit test (Fase 1 - Item 5)
-- **Tugas Berikutnya:** Buat CLI runner `worker/scripts/test-analyze.js`, lalu uji 1 video 10–15 menit dan 1 podcast > 45 menit
-- **File Terakhir Diubah:** `worker/src/validator.js`, `worker/test/validator.test.js`, `docs/progress.md`, `AGENTS.md`
-- **Blocker / Catatan:** Binary `yt-dlp` dan `ffmpeg` belum terinstall di Windows host untuk runtime live. Unit test seluruh worker lulus 26/26.
+- **Tugas Terakhir Selesai:** CLI runner `worker/scripts/test-analyze.js` (Fase 1 - Item 6, kode selesai)
+- **Tugas Berikutnya:** Install `yt-dlp` + `ffmpeg` di PATH dan isi `.env` untuk uji video nyata; setelah itu Fase 2 (Smart Clipping)
+- **File Terakhir Diubah:** `worker/scripts/test-analyze.js`, `worker/package.json`, `docs/progress.md`, `AGENTS.md`
+- **Blocker / Catatan:** `yt-dlp` ENOENT saat uji runtime. Kode pipeline Fase 1 lengkap. Uji riil tertunda sampai binary dan `.env` tersedia. Test: 26/26 pass.

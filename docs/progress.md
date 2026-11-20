@@ -89,6 +89,13 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm test` — PASS 26/26 (8 test baru validator).
 - **Status:** Selesai.
 
+## [2026-11-20] CLI Runner Analisis (Fase 1 - Item 6)
+- **Tujuan:** Pipeline lengkap dari URL YouTube -> metadata -> transkrip -> chunker -> 9router -> validator -> deduplikasi -> output JSON.
+- **File ditambahkan:** `worker/scripts/test-analyze.js`, npm script `"analyze": "node scripts/test-analyze.js"`.
+- **Hasil verifikasi:** `npm test` — PASS 26/26. NPM test dibatasi ke `test/**/*.test.js` supaya CLI tidak ikut dijalankan sebagai test.
+- **Blocker eksekusi nyata:** Memerlukan binary `yt-dlp` terpasang di host dan file `.env` berisi `NINEROUTER_API_KEY` serta model untuk menjalankan uji coba 2 video (10-15m & >45m).
+
+
 
 
 
