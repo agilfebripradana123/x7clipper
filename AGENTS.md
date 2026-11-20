@@ -121,7 +121,7 @@ web-clipper/
 
 ### Fase 3: Backend API, Database & Redis Queue
 - [x] Buat migrasi & model database untuk `projects`, `clips`, dan `render_jobs` sesuai `PRD.md`.
-- [ ] Buat endpoint `POST /api/projects` (validasi URL -> simpan project -> push job analisis ke Redis).
+- [x] Buat endpoint `POST /api/projects` (validasi URL -> simpan project -> push job analisis ke Redis).
 - [ ] Buat endpoint `GET /api/projects/{id}` (kembalikan status pipeline + daftar `clips`).
 - [ ] Buat endpoint `POST /api/clips/{id}/prepare` (push job smart clipping untuk klip yang dipilih user).
 - [ ] Buat endpoint `PATCH /api/clips/{id}/config` (simpan `edit_config_json` dan revisi `subtitle_json`).
@@ -151,6 +151,7 @@ web-clipper/
 - `2026-11-20`: 9router dipakai secara lokal melalui `http://localhost:20128/v1`; combo `bansossss` dapat mengembalikan SSE walau request `stream: false`, jadi worker mem-parsing respons JSON dan SSE.
 - `2026-11-20`: DB development lokal = XAMPP MariaDB 10.4 di `127.0.0.1:3307` (bukan 3306), database `x7clip`, user `root` tanpa password; `backend/.env` dan `phpunit.xml` memakai koneksi ini.
 - `2026-11-20`: Path subtitle relatif selalu di-resolve terhadap root proyek, bukan current working directory worker, agar runtime CLI menyimpan output di `storage/transcripts/`.
+- `2026-11-20`: Job queue Backend -> Worker memakai list Redis mentah `x7:jobs` berisi JSON `{"type":"analyze_project","project_id":<id>,"attempt":1}` (bukan payload queue Laravel). Client Redis = `predis/predis` karena ekstensi phpredis tidak tersedia di PHP XAMPP.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
@@ -158,7 +159,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 3 (Backend API, Database & Redis Queue)
-- **Tugas Terakhir Selesai:** Database schema, model Eloquent, dan relasi cascade `projects` -> `clips` -> `render_jobs` (Fase 3 Item 1 tuntas, test 6/6 pass).
-- **Tugas Berikutnya:** Endpoint `POST /api/projects` — validasi URL, simpan project, push job analisis ke Redis Queue (Fase 3 - Item 2).
-- **File Terakhir Diubah:** `backend/database/migrations/2026_11_20_00000{1,2,3}_create_*.php`, `backend/app/Models/{Project,Clip,RenderJob}.php`, `backend/tests/Feature/**`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Fase 3 Item 1 tuntas: Laravel 12 + MariaDB 10.4 `x7clip` port 3307, migrasi `migrate:fresh` sukses, `php artisan test` PASS 6/6 (20 assertions) termasuk cascade delete. Siap masuk endpoint `POST /api/projects`.
+- **Tugas Terakhir Selesai:** Endpoint `POST /api/projects` — validasi URL YouTube, simpan project `queued`, push job `analyze_project` ke list Redis `x7:jobs` (Fase 3 Item 2 tuntas, test 9/9 pass).
+- **Tugas Berikutnya:** Endpoint `GET /api/projects/{id}` (status pipeline + daftar `clips`) lalu consumer worker `worker/src/consumer.js` sebagai penutup Fase 3 (Fase 3 - Item 3).
+- **File Terakhir Diubah:** `backend/app/Support/JobQueue.php`, `backend/app/Http/Requests/StoreProjectRequest.php`, `backend/app/Http/Controllers/Api/ProjectController.php`, `backend/routes/api.php`, `backend/bootstrap/app.php`, `backend/tests/Feature/Api/ProjectApiTest.php`, `backend/.env{,.example}`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Fase 3 Item 2 tuntas: predis terpasang (`v3.7.1`), `REDIS_CLIENT=predis`, `POST /api/projects` 201 + job JSON masuk `x7:jobs`, invalid URL 422, Redis push gagal -> status `failed` + 503. `php artisan test` PASS 9/9 (35 assertions). Lanjut `GET /api/projects/{id}` + consumer worker.

@@ -145,6 +145,21 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `php artisan test` — **PASS 6/6 tests, 20 assertions** (termasuk cascade delete project -> clips -> render_jobs).
 - **Status:** Selesai (Fase 3 Item 1 tuntas).
 
+## [2026-11-20] Endpoint POST /api/projects & Redis Job Push (Fase 3 - Item 2)
+- **Tujuan:** Terima URL YouTube, simpan project `queued`, lalu push job analisis ke list Redis mentah `x7:jobs` untuk dikonsumsi worker.
+- **File ditambahkan/diubah:**
+  - `backend/app/Support/JobQueue.php` — helper statis `push(string $type, array $data)` via `Redis::connection()->lpush('x7:jobs', json_encode(...))`.
+  - `backend/app/Http/Requests/StoreProjectRequest.php` — `youtube_url` required|string|max:512 + regex YouTube (watch, youtu.be, live, shorts).
+  - `backend/app/Http/Controllers/Api/ProjectController.php` — create project, push job, 201 `{"data":{...}}`; push gagal -> `status=failed` + 503.
+  - `backend/routes/api.php`, `backend/bootstrap/app.php` — registrasi route API tanpa Sanctum/`install:api`.
+  - `backend/tests/Feature/Api/ProjectApiTest.php` — 3 feature test (invalid 422 tanpa job, watch URL 201 + job, youtu.be & /live/ diterima).
+  - `backend/.env`, `backend/.env.example` — `REDIS_CLIENT=predis` (`predis/predis` v3.7.1, tanpa ekstensi phpredis).
+- **Kontrak job Redis (`x7:jobs`):** `{"type":"analyze_project","project_id":<id>,"attempt":1}`.
+- **Hasil uji:**
+  - `php artisan test` — **PASS 9/9 tests, 35 assertions** (6 test lama + 3 test API).
+  - `php artisan route:list --path=api` — `POST api/projects` -> `Api\ProjectController@store` (1 route).
+- **Status:** Selesai (Fase 3 Item 2 tuntas).
+
 
 
 
