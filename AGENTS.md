@@ -107,7 +107,7 @@ web-clipper/
 - [x] Buat script `worker/scripts/healthcheck.js` untuk verifikasi `yt-dlp`, `ffmpeg`, `ffprobe`, ping Redis, dan test request ringan ke 9router.
 
 ### Fase 1: Pipeline Transkrip & AI Selector (Worker CLI Dulu)
-- [ ] Buat modul `worker/src/youtube.js`: ambil metadata JSON dan download subtitle/auto-caption via `yt-dlp`.
+- [x] Buat modul `worker/src/youtube.js`: ambil metadata JSON dan download subtitle/auto-caption via `yt-dlp`.
 - [ ] Buat modul `worker/src/transcript.js`: parse VTT/SRT -> gabungkan menjadi segmen 6–10 detik `[S{id}|{detik}]` + kembalikan `segmentMap`.
 - [ ] Buat modul `worker/src/chunker.js`: pecah transkrip per 15 menit dengan overlap 2 menit untuk video >= 20 menit.
 - [ ] Buat modul `worker/src/ninerouter.js`: client `/v1/chat/completions` dengan system prompt standar, strip markdown fence, dan retry 1x jika JSON invalid.
@@ -155,7 +155,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 1 (Pipeline Transkrip & AI Selector)
-- **Tugas Terakhir Selesai:** Fase 0 (Struktur folder, `.gitignore`, `.env.example`, `healthcheck.js`)
-- **Tugas Berikutnya:** Buat modul `worker/src/youtube.js` (ekstraksi metadata JSON & subtitle via `yt-dlp`)
-- **File Terakhir Diubah:** `AGENTS.md`, `docs/progress.md`, `worker/scripts/healthcheck.js`, `worker/package.json`
-- **Blocker / Catatan:** Host Windows lokal belum install binary `yt-dlp` dan `ffmpeg`/`ffprobe` di PATH sistem (Redis aktif dan lulus ping PONG). Perlu path konfigurasi atau install binary untuk uji eksekusi riil.
+- **Tugas Terakhir Selesai:** Modul `worker/src/youtube.js` dan unit test (Fase 1 - Item 1)
+- **Tugas Berikutnya:** Buat modul `worker/src/transcript.js` (parse VTT/SRT -> segmen 6–10 detik `[S{id}|{detik}]` + `segmentMap`)
+- **File Terakhir Diubah:** `worker/src/youtube.js`, `worker/test/youtube.test.js`, `worker/package.json`, `docs/progress.md`, `AGENTS.md`
+- **Blocker / Catatan:** Binary `yt-dlp` dan `ffmpeg` belum terinstall di Windows host untuk runtime live, tapi unit test mock lulus 100% (6/6 passing).

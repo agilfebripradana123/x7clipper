@@ -38,3 +38,13 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Blocker:** Perlu install `yt-dlp` dan `ffmpeg` di PATH host sebelum Fase 1 uji riil.
 - **Status:** Selesai (Fase 0 tuntas).
 
+## [2026-11-20] Modul YouTube (Fase 1 - Item 1)
+- **Tujuan:** Ambil metadata YouTube dan unduh subtitle VTT tanpa video penuh.
+- **File ditambahkan:** `worker/src/youtube.js`, `worker/test/youtube.test.js`.
+- **Kontrak:**
+  - `getVideoMetadata(url)` validasi URL YouTube, panggil `yt-dlp --dump-json --no-playlist`, dan tolak video < 60 detik.
+  - `downloadTranscript(url)` pilih subtitle manual `id`/`en`, fallback auto-caption, unduh VTT saja via `--skip-download`.
+  - Error eksplisit: `InvalidUrlError`, `VideoTooShortError`, `TranscriptNotFoundError`, `YtDlpError`.
+- **Hasil uji:** `node --test test/youtube.test.js` — PASS 6/6.
+- **Status:** Selesai.
+

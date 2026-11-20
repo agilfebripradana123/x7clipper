@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "healthcheck": "node scripts/healthcheck.js"
+    "healthcheck": "node scripts/healthcheck.js",
+    "test": "node --test"
   },
   "dependencies": {
     "ioredis": "^5.4.1",
