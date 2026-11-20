@@ -124,6 +124,27 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - Unit test suite diperbarui: `npm test` — **PASS 34/34**.
 - **Status:** Selesai (Fase 2 tuntas 100%).
 
+## [2026-11-20] Database Schema, Model Eloquent & Relasi (Fase 3 - Item 1)
+- **Tujuan:** Bootstrap Laravel 12 di `backend/`, koneksi MySQL `x7clip`, migrasi `projects`/`clips`/`render_jobs`, model Eloquent dengan casts serta relasi cascade.
+- **Environment:** PHP 8.2.12 (XAMPP), Composer 2.6.6, MariaDB 10.4 XAMPP di `127.0.0.1:3307`, user `root` tanpa password, database `x7clip`.
+- **File ditambahkan:**
+  - `backend/` — skeleton Laravel 12 (`laravel/framework` v12.73.0) + `vendor/` + `composer.lock`.
+  - `backend/database/migrations/2026_11_20_000001_create_projects_table.php`
+  - `backend/database/migrations/2026_11_20_000002_create_clips_table.php`
+  - `backend/database/migrations/2026_11_20_000003_create_render_jobs_table.php`
+  - `backend/app/Models/Project.php`, `backend/app/Models/Clip.php`, `backend/app/Models/RenderJob.php`
+  - `backend/tests/Feature/DatabaseConnectionTest.php`
+  - `backend/tests/Feature/Models/ProjectModelTest.php`, `ClipModelTest.php`, `CascadeDeleteTest.php`
+- **Keputusan:**
+  - Koordinat klip `start_sec`/`end_sec` = `decimal(8,3)` dengan cast `float` di model.
+  - Field JSON transkrip/subtitle/edit config = `longText` dengan cast `array`.
+  - Foreign key `clips.project_id` dan `render_jobs.clip_id` memakai `cascadeOnDelete()`.
+  - `phpunit.xml` dibiarkan tanpa override SQLite sehingga test memakai koneksi `.env` (`x7clip`).
+- **Hasil uji:**
+  - `php artisan migrate:fresh` — sukses, 6 migrasi (termasuk 3 tabel default Laravel).
+  - `php artisan test` — **PASS 6/6 tests, 20 assertions** (termasuk cascade delete project -> clips -> render_jobs).
+- **Status:** Selesai (Fase 3 Item 1 tuntas).
+
 
 
 

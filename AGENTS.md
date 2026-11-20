@@ -120,7 +120,7 @@ web-clipper/
 - [x] Uji pemutaran hasil `.mp4` klip di browser (pastikan audio sinkron dan tidak freeze di 2 detik awal).
 
 ### Fase 3: Backend API, Database & Redis Queue
-- [ ] Buat migrasi & model database untuk `projects`, `clips`, dan `render_jobs` sesuai `PRD.md`.
+- [x] Buat migrasi & model database untuk `projects`, `clips`, dan `render_jobs` sesuai `PRD.md`.
 - [ ] Buat endpoint `POST /api/projects` (validasi URL -> simpan project -> push job analisis ke Redis).
 - [ ] Buat endpoint `GET /api/projects/{id}` (kembalikan status pipeline + daftar `clips`).
 - [ ] Buat endpoint `POST /api/clips/{id}/prepare` (push job smart clipping untuk klip yang dipilih user).
@@ -149,6 +149,7 @@ web-clipper/
 - `2026-11-20`: Menetapkan **Segment-ID Anchoring** (`[S{id}|{detik}]`) untuk menghilangkan halusinasi timestamp LLM.
 - `2026-11-20`: Memisahkan `worker/` (Node.js) dari `backend/` agar mudah dipindahkan ke VPS khusus FFmpeg saat produksi.
 - `2026-11-20`: 9router dipakai secara lokal melalui `http://localhost:20128/v1`; combo `bansossss` dapat mengembalikan SSE walau request `stream: false`, jadi worker mem-parsing respons JSON dan SSE.
+- `2026-11-20`: DB development lokal = XAMPP MariaDB 10.4 di `127.0.0.1:3307` (bukan 3306), database `x7clip`, user `root` tanpa password; `backend/.env` dan `phpunit.xml` memakai koneksi ini.
 - `2026-11-20`: Path subtitle relatif selalu di-resolve terhadap root proyek, bukan current working directory worker, agar runtime CLI menyimpan output di `storage/transcripts/`.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
@@ -157,7 +158,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 3 (Backend API, Database & Redis Queue)
-- **Tugas Terakhir Selesai:** Verifikasi pemutaran klip browser & sinkronisasi audio/subtitle (Fase 2 tuntas 100%).
-- **Tugas Berikutnya:** Migrasi & model database `projects`, `clips`, `render_jobs` sesuai `PRD.md` (Fase 3 - Item 1).
-- **File Terakhir Diubah:** `worker/src/youtube.js`, `worker/test/youtube.test.js`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Fase 2 tuntas: smart clipping `yt-dlp` parsial, re-encode FFmpeg faststart + keyframe bersih di 0.04s, audio start 0.00s, subtitle shift ke 00:00 (SRT/JSON), test 34/34 pass. Siap masuk Fase 3.
+- **Tugas Terakhir Selesai:** Database schema, model Eloquent, dan relasi cascade `projects` -> `clips` -> `render_jobs` (Fase 3 Item 1 tuntas, test 6/6 pass).
+- **Tugas Berikutnya:** Endpoint `POST /api/projects` — validasi URL, simpan project, push job analisis ke Redis Queue (Fase 3 - Item 2).
+- **File Terakhir Diubah:** `backend/database/migrations/2026_11_20_00000{1,2,3}_create_*.php`, `backend/app/Models/{Project,Clip,RenderJob}.php`, `backend/tests/Feature/**`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Fase 3 Item 1 tuntas: Laravel 12 + MariaDB 10.4 `x7clip` port 3307, migrasi `migrate:fresh` sukses, `php artisan test` PASS 6/6 (20 assertions) termasuk cascade delete. Siap masuk endpoint `POST /api/projects`.
