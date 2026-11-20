@@ -58,4 +58,16 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `node --test` — PASS 10/10 (4 test baru transkrip + 6 test youtube).
 - **Status:** Selesai.
 
+## [2026-11-20] Chunker Transkrip Sliding Window (Fase 1 - Item 3)
+- **Tujuan:** Pecah transkrip panjang ke segmen analisis AI terstruktur.
+- **File ditambahkan:** `worker/src/chunker.js`, `worker/test/chunker.test.js`.
+- **Kontrak:**
+  - `chunkSegments(segments, durationSec)`
+  - Durasi < 20 menit (1200 detik): 1 request utuh.
+  - Durasi >= 20 menit: sliding window 15 menit (900 detik) dengan overlap 2 menit (120 detik).
+  - Mengembalikan array chunk yang masing-masing membawa `formattedText` dan segmen terkait.
+- **Hasil uji:** `node --test` — PASS 14/14 (4 test baru chunker).
+- **Status:** Selesai.
+
+
 
