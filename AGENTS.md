@@ -116,7 +116,7 @@ web-clipper/
 
 ### Fase 2: Smart Clipping & Subtitle Shifting
 - [x] Buat modul `worker/src/clipper.js`: potong segmen parsial via `yt-dlp --download-sections` + rapikan keyframe via FFmpeg.
-- [ ] Buat modul `worker/src/subtitleShift.js`: ambil irisan transkrip sesuai `start_sec..end_sec` dan geser timestamp mundur agar mulai dari `00:00` (output JSON & `.srt`/`.ass`).
+- [x] Buat modul `worker/src/subtitleShift.js`: ambil irisan transkrip sesuai `start_sec..end_sec` dan geser timestamp mundur agar mulai dari `00:00` (output JSON & `.srt`/`.ass`).
 - [ ] Uji pemutaran hasil `.mp4` klip di browser (pastikan audio sinkron dan tidak freeze di 2 detik awal).
 
 ### Fase 3: Backend API, Database & Redis Queue
@@ -156,7 +156,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 2 (Smart Clipping & Subtitle Shifting)
-- **Tugas Terakhir Selesai:** Modul `worker/src/clipper.js` dan uji potong parsial nyata (Fase 2 - Item 1).
-- **Tugas Berikutnya:** Buat modul `worker/src/subtitleShift.js` (irisan transkrip dan geser timestamp ke `00:00`).
-- **File Terakhir Diubah:** `worker/src/clipper.js`, `worker/test/clipper.test.js`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Uji live potongan 15 detik berhasil: h264 1080p + aac, durasi tepat 15s, 5.02 MB. Test worker 29/29 lulus.
+- **Tugas Terakhir Selesai:** Modul `worker/src/subtitleShift.js` dan unit test (Fase 2 - Item 2).
+- **Tugas Berikutnya:** Uji pemutaran hasil `.mp4` klip di browser via test page (Fase 2 - Item 3).
+- **File Terakhir Diubah:** `worker/src/subtitleShift.js`, `worker/test/subtitleShift.test.js`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Shifting subtitle ke 00:00 (JSON, SRT, ASS) selesai & 33/33 test pass. Klip parsial `live-test-01.mp4` sudah tersedia untuk verifikasi pemutaran browser.

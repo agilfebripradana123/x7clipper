@@ -102,6 +102,16 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - Uji riil: potong detik `10s–25s` dari YouTube langsung menghasilkan file MP4 1080p h264 + aac 15.00s (5.02 MB) di `storage/raw-clips/live-test-01.mp4`.
 - **Status:** Selesai.
 
+## [2026-11-20] Subtitle Shift & Export (Fase 2 - Item 2)
+- **Tujuan:** Iris subtitle ke rentang klip dan geser timestamp agar klip selalu mulai dari `00:00`.
+- **File ditambahkan:** `worker/src/subtitleShift.js`, `worker/test/subtitleShift.test.js`.
+- **Kontrak:**
+  - `shiftSubtitles(segments, startSec, endSec)` filter irisan, clamp batas subtitle, lalu geser timestamp mundur sebesar `startSec`.
+  - `toSrt(subtitles)` menghasilkan standar SRT.
+  - `toAss(subtitles, style)` menghasilkan ASS dasar kompatibel filter subtitles FFmpeg.
+- **Hasil uji:** `npm test` — PASS 33/33; mencakup clamp awal/akhir dan serialisasi SRT/ASS.
+- **Status:** Selesai.
+
 
 
 
