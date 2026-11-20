@@ -117,7 +117,7 @@ web-clipper/
 ### Fase 2: Smart Clipping & Subtitle Shifting
 - [x] Buat modul `worker/src/clipper.js`: potong segmen parsial via `yt-dlp --download-sections` + rapikan keyframe via FFmpeg.
 - [x] Buat modul `worker/src/subtitleShift.js`: ambil irisan transkrip sesuai `start_sec..end_sec` dan geser timestamp mundur agar mulai dari `00:00` (output JSON & `.srt`/`.ass`).
-- [ ] Uji pemutaran hasil `.mp4` klip di browser (pastikan audio sinkron dan tidak freeze di 2 detik awal).
+- [x] Uji pemutaran hasil `.mp4` klip di browser (pastikan audio sinkron dan tidak freeze di 2 detik awal).
 
 ### Fase 3: Backend API, Database & Redis Queue
 - [ ] Buat migrasi & model database untuk `projects`, `clips`, dan `render_jobs` sesuai `PRD.md`.
@@ -149,14 +149,15 @@ web-clipper/
 - `2026-11-20`: Menetapkan **Segment-ID Anchoring** (`[S{id}|{detik}]`) untuk menghilangkan halusinasi timestamp LLM.
 - `2026-11-20`: Memisahkan `worker/` (Node.js) dari `backend/` agar mudah dipindahkan ke VPS khusus FFmpeg saat produksi.
 - `2026-11-20`: 9router dipakai secara lokal melalui `http://localhost:20128/v1`; combo `bansossss` dapat mengembalikan SSE walau request `stream: false`, jadi worker mem-parsing respons JSON dan SSE.
+- `2026-11-20`: Path subtitle relatif selalu di-resolve terhadap root proyek, bukan current working directory worker, agar runtime CLI menyimpan output di `storage/transcripts/`.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 2 (Smart Clipping & Subtitle Shifting)
-- **Tugas Terakhir Selesai:** Modul `worker/src/subtitleShift.js` dan unit test (Fase 2 - Item 2).
-- **Tugas Berikutnya:** Uji pemutaran hasil `.mp4` klip di browser via test page (Fase 2 - Item 3).
-- **File Terakhir Diubah:** `worker/src/subtitleShift.js`, `worker/test/subtitleShift.test.js`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Shifting subtitle ke 00:00 (JSON, SRT, ASS) selesai & 33/33 test pass. Klip parsial `live-test-01.mp4` sudah tersedia untuk verifikasi pemutaran browser.
+- **Fase Aktif:** Fase 3 (Backend API, Database & Redis Queue)
+- **Tugas Terakhir Selesai:** Verifikasi pemutaran klip browser & sinkronisasi audio/subtitle (Fase 2 tuntas 100%).
+- **Tugas Berikutnya:** Migrasi & model database `projects`, `clips`, `render_jobs` sesuai `PRD.md` (Fase 3 - Item 1).
+- **File Terakhir Diubah:** `worker/src/youtube.js`, `worker/test/youtube.test.js`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Fase 2 tuntas: smart clipping `yt-dlp` parsial, re-encode FFmpeg faststart + keyframe bersih di 0.04s, audio start 0.00s, subtitle shift ke 00:00 (SRT/JSON), test 34/34 pass. Siap masuk Fase 3.

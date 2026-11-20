@@ -112,6 +112,19 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm test` — PASS 33/33; mencakup clamp awal/akhir dan serialisasi SRT/ASS.
 - **Status:** Selesai.
 
+## [2026-11-20] Verifikasi Pemutaran Klip MP4 & Sinkronisasi Audio/Subtitle (Fase 2 - Item 3)
+- **Tujuan:** Memastikan klip `.mp4` parsial hasil smart clipping dapat diputar mulus di browser tanpa freeze di 2 detik awal serta audio sinkron dengan teks subtitle.
+- **Metrik & Hasil Verifikasi:**
+  - File klip riil: `storage/raw-clips/podcast-clip-01.mp4` (durasi 37.65s, 9.62 MB).
+  - Stream audio: start time `0.000000` (AAC).
+  - Stream video: start time `0.040000` (1 frame pada 25fps, H.264), keyframe I-frame di frame awal.
+  - Struktur MP4: moov atom di awal file (`-movflags +faststart`) untuk streaming instan di browser.
+  - Decode FFmpeg 2 detik awal (`ffmpeg -xerror -ss 0 -t 2 -f null -`): 0 error, 0 desync, 0 frame corrupt.
+  - Subtitle klip shifted: `storage/raw-clips/podcast-clip-01.srt` dan `.json` mulai tepat di `00:00,000` (7 baris dialog).
+  - Unit test suite diperbarui: `npm test` — **PASS 34/34**.
+- **Status:** Selesai (Fase 2 tuntas 100%).
+
+
 
 
 

@@ -87,6 +87,24 @@ test('download subtitle manual bahasa id diprioritaskan', async () => {
   assert.ok(!calls[1].args.includes('--write-auto-sub'));
 });
 
+test('path relatif transcript diarahkan ke storage root proyek', async () => {
+  const calls = [];
+  const run = async (bin, args) => {
+    calls.push({ bin, args });
+    return { stdout: JSON.stringify({ id: 'dQw4w9WgXcQ', duration: 120, subtitles: { id: [] }, automatic_captions: {} }) };
+  };
+  const result = await downloadTranscript(VALID_URL, {
+    run,
+    read: async () => 'WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nHalo dunia',
+    makeDir: async () => {},
+    transcriptsDir: 'storage/transcripts',
+  });
+
+  assert.match(result.filePath.replace(/\\/g, '/'), /x7clip\/storage\/transcripts\/dQw4w9WgXcQ\.id\.vtt$/);
+  const output = calls[1].args.at(-2).replace(/\\/g, '/');
+  assert.match(output, /x7clip\/storage\/transcripts\/%\(id\)s\.%\(ext\)s$/);
+});
+
 test('fallback ke auto-caption jika manual tidak ada', async () => {
   const calls = [];
   const run = async (bin, args) => {

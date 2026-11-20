@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, mkdir } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
@@ -60,7 +60,8 @@ export async function downloadTranscript(url, { transcriptsDir = process.env.STO
   if (!lang) throw new TranscriptNotFoundError(videoId);
 
   const auto = !manualLang;
-  const outDir = resolve(transcriptsDir);
+  const rawDir = transcriptsDir || process.env.STORAGE_TRANSCRIPTS || defaultStorageDir;
+  const outDir = isAbsolute(rawDir) ? rawDir : resolve(projectRoot, rawDir);
   await makeDir(outDir, { recursive: true });
   await runYtDlp([
     '--skip-download', auto ? '--write-auto-sub' : '--write-sub', '--sub-lang', lang,
