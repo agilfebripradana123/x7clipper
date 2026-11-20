@@ -1,0 +1,30 @@
+# Storage directories (keep folder, ignore files)
+storage/tmp/*
+!storage/tmp/.gitkeep
+storage/transcripts/*
+!storage/transcripts/.gitkeep
+storage/raw-clips/*
+!storage/raw-clips/.gitkeep
+storage/exports/*
+!storage/exports/.gitkeep
+
+# Dependencies
+node_modules/
+vendor/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs & temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
