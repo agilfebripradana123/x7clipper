@@ -162,4 +162,41 @@ class ClipRenderApiTest extends TestCase
     {
         $this->getJson('/api/render-jobs/999999')->assertNotFound();
     }
+
+    public function test_download_returns_final_video_file(): void
+    {
+        $clip = $this->makeClip();
+        $relative = 'storage/exports/test-download-'.uniqid().'.mp4';
+        $absolute = dirname(base_path()).DIRECTORY_SEPARATOR.$relative;
+        @mkdir(dirname($absolute), 0777, true);
+        file_put_contents($absolute, 'fake-render-bytes');
+
+        $renderJob = $clip->renderJobs()->create([
+            'status' => 'done',
+            'progress_percent' => 100,
+            'output_url' => $relative,
+        ]);
+
+        try {
+            $this->getJson("/api/render-jobs/{$renderJob->id}/download")
+                ->assertOk()
+                ->assertHeader('content-type', 'video/mp4')
+                ->assertHeader('content-disposition', 'attachment; filename="'.basename($absolute).'"');
+        } finally {
+            @unlink($absolute);
+        }
+    }
+
+    public function test_download_returns_404_when_job_not_done_or_file_missing(): void
+    {
+        $clip = $this->makeClip();
+        $queued = $clip->renderJobs()->create(['status' => 'queued']);
+        $missing = $clip->renderJobs()->create([
+            'status' => 'done',
+            'output_url' => 'storage/exports/tidak-ada-'.uniqid().'.mp4',
+        ]);
+
+        $this->getJson("/api/render-jobs/{$queued->id}/download")->assertNotFound();
+        $this->getJson("/api/render-jobs/{$missing->id}/download")->assertNotFound();
+    }
 }

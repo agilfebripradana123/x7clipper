@@ -57,6 +57,22 @@ class RenderJobController extends Controller
         return $this->renderResponse($renderJob, 200);
     }
 
+    public function download(RenderJob $renderJob)
+    {
+        $path = $renderJob->output_url
+            ? dirname(base_path()).DIRECTORY_SEPARATOR.$renderJob->output_url
+            : null;
+
+        if ($renderJob->status !== 'done' || $path === null || ! is_file($path)) {
+            abort(404, 'File hasil render belum tersedia.');
+        }
+
+        return response()->file($path, [
+            'Content-Type' => 'video/mp4',
+            'Content-Disposition' => 'attachment; filename="'.basename($path).'"',
+        ]);
+    }
+
     private function renderResponse(RenderJob $renderJob, int $status): JsonResponse
     {
         return response()->json([

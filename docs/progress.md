@@ -283,6 +283,21 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm run build` — **PASS** (33 modules, CSS 28.67 kB, JS 257.26 kB).
 - **Status:** Selesai (Fase 4 Item 4 tuntas).
 
+## [2026-11-21] Panel Subtitle & Caption Live (Fase 4 - Item 5)
+- **Tujuan:** Mengedit subtitle bertimestamp dan melihat hasilnya langsung di player sebelum render.
+- **File diubah/ditambah:**
+  - `frontend/src/components/Editor.jsx` — state `subtitle` (enabled/position/font_size/color) + daftar baris (start/end string, text), overlay caption live, validasi baris, simpan gabungan.
+  - `backend/app/Http/Controllers/Api/RenderJobController.php` — `download()` (`response()->file`, `Content-Disposition: attachment`).
+  - `backend/routes/api.php` — `GET /api/render-jobs/{renderJob}/download`.
+  - `backend/tests/Feature/Api/ClipRenderApiTest.php` — test unduh file done + 404 saat belum done/file hilang.
+- **Kontrak:**
+  - Baris subtitle: `start>=0`, `end>start`, `end<=durasi+0.5`, teks non-kosong maks 500; diurutkan per `start` saat simpan.
+  - Simpan satu PATCH: `edit_config.subtitle` + `subtitles` (replace penuh), bersama trim/rasio/crop.
+  - Overlay: `fontPx = font_size * (displayedHeight / outputHeight)`, `outputHeight` 1920 (9:16) / 1080 (16:9), font `Arial`, dipotong ke area crop 9:16.
+  - Download hanya untuk job `done` dengan file ada; selain itu 404.
+- **Hasil uji:** `npm run build` PASS (33 modules); `php artisan test` PASS 33/33.
+- **Status:** Selesai (Fase 4 Item 5 tuntas).
+
 
 
 

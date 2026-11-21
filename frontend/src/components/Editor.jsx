@@ -24,6 +24,27 @@ function formatTime(t) {
   return `${m}:${String(s).padStart(2, '0')}.${d}`
 }
 
+let rowSeq = 0
+const nextRowId = () => ++rowSeq
+const secStr = (n) => {
+  const v = Number(n)
+  return Number.isFinite(v) ? String(Math.round(v * 100) / 100) : '0'
+}
+const HEX = /^#[0-9a-fA-F]{6}$/
+
+function validateRows(rows, duration) {
+  const errors = {}
+  for (const r of rows) {
+    const s = Number(r.start)
+    const e = Number(r.end)
+    if (!Number.isFinite(s) || s < 0) errors[r.id] = 'Waktu awal tidak valid.'
+    else if (!Number.isFinite(e) || e <= s) errors[r.id] = 'Waktu akhir harus setelah awal.'
+    else if (e > duration + 0.5) errors[r.id] = 'Waktu akhir melebihi durasi klip.'
+    else if (!String(r.text).trim()) errors[r.id] = 'Teks subtitle kosong.'
+  }
+  return errors
+}
+
 const BTN =
   'inline-flex h-10 items-center justify-center rounded-lg px-4 text-[13px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50'
 const BTN_PRIMARY = `${BTN} bg-accent text-void hover:bg-accent-2`
@@ -197,6 +218,24 @@ export default function Editor({ clip, onBack }) {
     const c = clip.edit_config_json?.crop_x
     return typeof c === 'number' ? clamp(round3(c), 0, 1) : 0.5
   })
+  const [subtitle, setSubtitle] = useState(() => {
+    const s = clip.edit_config_json?.subtitle || {}
+    return {
+      enabled: typeof s.enabled === 'boolean' ? s.enabled : true,
+      position: s.position === 'top' || s.position === 'middle' || s.position === 'bottom' ? s.position : 'bottom',
+      font_size: typeof s.font_size === 'number' ? Math.round(s.font_size) : 42,
+      color: typeof s.color === 'string' && HEX.test(s.color) ? s.color.toUpperCase() : '#FFFFFF',
+    }
+  })
+  const [rows, setRows] = useState(() =>
+    (clip.subtitle_json || []).map((s) => ({
+      id: nextRowId(),
+      start: secStr(s.start),
+      end: secStr(s.end),
+      text: s.text ?? '',
+    })),
+  )
+  const [rowErrors, setRowErrors] = useState({})
   const [stageSize, setStageSize] = useState({ w: 0, h: 0 })
   const [videoSize, setVideoSize] = useState({ w: 0, h: 0 })
 
@@ -320,6 +359,49 @@ export default function Editor({ clip, onBack }) {
     setSaveError(null)
   }
 
+  const markDirty = () => {
+    setSaveState('idle')
+    setSaveError(null)
+  }
+
+  const updateSubtitle = (patch) => {
+    setSubtitle((prev) => ({ ...prev, ...patch }))
+    markDirty()
+  }
+
+  const updateRow = (id, patch) => {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+    setRowErrors((prev) => {
+      if (!prev[id]) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    markDirty()
+  }
+
+  const removeRow = (id) => {
+    setRows((prev) => prev.filter((r) => r.id !== id))
+    setRowErrors((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    markDirty()
+  }
+
+  const addRow = () => {
+    setRows((prev) => {
+      const last = prev[prev.length - 1]
+      let start = last ? Number(last.end) : 0
+      if (!Number.isFinite(start)) start = 0
+      start = clamp(start, 0, Math.max(0, duration - 2))
+      const end = clamp(start + 2, start + 0.1, duration)
+      return [...prev, { id: nextRowId(), start: secStr(start), end: secStr(end), text: '' }]
+    })
+    markDirty()
+  }
+
   const resetRange = () => {
     setTrim({ start: 0, end: duration })
     setSaveState('idle')
@@ -336,6 +418,18 @@ export default function Editor({ clip, onBack }) {
   }
 
   const handleSave = async () => {
+    const errors = validateRows(rows, duration)
+    if (Object.keys(errors).length > 0) {
+      setRowErrors(errors)
+      setSaveError('Periksa baris subtitle yang ditandai.')
+      setSaveState('idle')
+      return
+    }
+
+    const sorted = rows
+      .map((r) => ({ start: round3(Number(r.start)), end: round3(Number(r.end)), text: String(r.text).trim() }))
+      .sort((a, b) => a.start - b.start)
+
     setSaveState('saving')
     setSaveError(null)
     try {
@@ -345,8 +439,16 @@ export default function Editor({ clip, onBack }) {
           trim_end: round3(trim.end),
           aspect_ratio: aspectRatio,
           crop_x: round3(cropX),
+          subtitle: {
+            enabled: subtitle.enabled,
+            position: subtitle.position,
+            font_size: clamp(Math.round(subtitle.font_size) || 42, 8, 200),
+            color: HEX.test(subtitle.color) ? subtitle.color.toUpperCase() : '#FFFFFF',
+          },
         },
+        subtitles: sorted,
       })
+
       const saved = res?.data?.edit_config_json
       if (saved) {
         setTrim((prev) => ({
@@ -359,11 +461,37 @@ export default function Editor({ clip, onBack }) {
         if (typeof saved.crop_x === 'number') {
           setCropX(clamp(round3(saved.crop_x), 0, 1))
         }
+        if (saved.subtitle) {
+          const s = saved.subtitle
+          setSubtitle((prev) => ({
+            enabled: typeof s.enabled === 'boolean' ? s.enabled : prev.enabled,
+            position:
+              s.position === 'top' || s.position === 'middle' || s.position === 'bottom'
+                ? s.position
+                : prev.position,
+            font_size: typeof s.font_size === 'number' ? Math.round(s.font_size) : prev.font_size,
+            color: typeof s.color === 'string' && HEX.test(s.color) ? s.color.toUpperCase() : prev.color,
+          }))
+        }
       }
+
+      const savedSubs = res?.data?.subtitle_json
+      if (Array.isArray(savedSubs)) {
+        setRows(
+          savedSubs.map((s) => ({
+            id: nextRowId(),
+            start: secStr(s.start),
+            end: secStr(s.end),
+            text: s.text ?? '',
+          })),
+        )
+      }
+
+      setRowErrors({})
       setSaveState('saved')
     } catch (err) {
       const first = err?.body?.errors ? Object.values(err.body.errors).flat()[0] : null
-      setSaveError(first || err?.body?.message || err?.message || 'Gagal menyimpan potongan.')
+      setSaveError(first || err?.body?.message || err?.message || 'Gagal menyimpan perubahan.')
       setSaveState('error')
     }
   }
@@ -385,6 +513,20 @@ export default function Editor({ clip, onBack }) {
           : 'Belum disimpan'
   const saveColor =
     saveState === 'saved' ? 'text-ok' : saveState === 'error' ? 'text-fail' : 'text-faint'
+
+  const activeSub = subtitle.enabled
+    ? rows.find((r) => {
+        const s = Number(r.start)
+        const e = Number(r.end)
+        return (
+          Number.isFinite(s) &&
+          Number.isFinite(e) &&
+          currentTime >= s &&
+          currentTime < e &&
+          String(r.text).trim().length > 0
+        )
+      })
+    : null
 
   return (
     <div className="w-full">
@@ -547,6 +689,53 @@ export default function Editor({ clip, onBack }) {
               </>
             )}
 
+            {activeSub && geom && (
+              <div
+                className="pointer-events-none absolute overflow-hidden"
+                style={{
+                  left: aspectRatio === '9:16' ? geom.offsetX + cropX * geom.range : geom.offsetX,
+                  top: geom.offsetY,
+                  width: aspectRatio === '9:16' ? geom.frameW : geom.dispW,
+                  height: geom.dispH,
+                }}
+              >
+                <div
+                  className="flex h-full w-full justify-center"
+                  style={{
+                    alignItems:
+                      subtitle.position === 'top'
+                        ? 'flex-start'
+                        : subtitle.position === 'middle'
+                          ? 'center'
+                          : 'flex-end',
+                    paddingTop: subtitle.position === 'top' ? geom.dispH * 0.06 : 0,
+                    paddingBottom: subtitle.position === 'bottom' ? geom.dispH * 0.06 : 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: 'Arial, sans-serif',
+                      fontSize: clamp(
+                        subtitle.font_size * (geom.dispH / (aspectRatio === '9:16' ? 1920 : 1080)),
+                        11,
+                        geom.dispH * 0.3,
+                      ),
+                      color: subtitle.color,
+                      fontWeight: 700,
+                      lineHeight: 1.15,
+                      textAlign: 'center',
+                      maxWidth: '92%',
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                      textShadow: '0 0 2px #000, 0 1px 3px rgba(0,0,0,0.85)',
+                    }}
+                  >
+                    {activeSub.text}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {!ready && !videoError && (
               <div className="absolute inset-0 grid place-items-center bg-black/70">
                 <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">Memuat video…</p>
@@ -680,8 +869,193 @@ export default function Editor({ clip, onBack }) {
               <p className="mt-3 text-xs leading-relaxed text-faint">Mode lanskap memakai frame penuh.</p>
             )}
           </div>
+
+          <div className="mt-5 border-t border-line pt-5">
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Subtitle</p>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={subtitle.enabled}
+                  onChange={(e) => updateSubtitle({ enabled: e.target.checked })}
+                  className="h-3.5 w-3.5 rounded border border-line bg-void"
+                  style={{ accentColor: '#eaa33c' }}
+                />
+                Aktif
+              </label>
+            </div>
+
+            <div role="group" aria-label="Posisi subtitle" className="mt-3 grid grid-cols-3 gap-1.5">
+              {[
+                ['top', 'Atas'],
+                ['middle', 'Tengah'],
+                ['bottom', 'Bawah'],
+              ].map(([value, label]) => {
+                const active = subtitle.position === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => updateSubtitle({ position: value })}
+                    aria-pressed={active}
+                    className={`rounded-md border py-1.5 text-[11px] transition ${
+                      active
+                        ? 'border-accent bg-accent/10 text-accent'
+                        : 'border-line text-muted hover:border-line-2 hover:bg-panel-2'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="mt-3">
+              <label
+                htmlFor="sub-size"
+                className="block font-mono text-[10px] uppercase tracking-[0.12em] text-faint"
+              >
+                Ukuran font
+              </label>
+              <div className="mt-1.5 flex items-center gap-2">
+                <input
+                  type="range"
+                  min={8}
+                  max={200}
+                  step={1}
+                  value={clamp(Math.round(subtitle.font_size), 8, 200)}
+                  onChange={(e) => updateSubtitle({ font_size: Number(e.target.value) })}
+                  aria-label="Ukuran font subtitle"
+                  className="flex-1"
+                  style={{ accentColor: '#eaa33c' }}
+                />
+                <input
+                  id="sub-size"
+                  type="number"
+                  min={8}
+                  max={200}
+                  value={subtitle.font_size}
+                  onChange={(e) => {
+                    const v = Number(e.target.value)
+                    updateSubtitle({ font_size: Number.isFinite(v) ? v : subtitle.font_size })
+                  }}
+                  onBlur={() =>
+                    updateSubtitle({ font_size: clamp(Math.round(subtitle.font_size) || 42, 8, 200) })
+                  }
+                  className="h-8 w-16 rounded-md border border-line bg-void/60 px-2 text-center font-mono text-xs text-ink outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                type="color"
+                value={subtitle.color}
+                onChange={(e) => updateSubtitle({ color: e.target.value.toUpperCase() })}
+                aria-label="Warna subtitle"
+                className="h-8 w-10 cursor-pointer rounded border border-line bg-void"
+              />
+              <span className="font-mono text-xs text-muted">{subtitle.color.toUpperCase()}</span>
+            </div>
+          </div>
         </aside>
       </div>
+
+      <section className="mt-6" aria-labelledby="subtitle-rows-heading">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Teks subtitle</p>
+            <h2 id="subtitle-rows-heading" className="mt-1.5 font-display text-lg font-semibold text-ink">
+              Baris subtitle{' '}
+              <span className="font-mono text-xs font-normal text-faint">({rows.length})</span>
+            </h2>
+          </div>
+          <button type="button" onClick={addRow} className={BTN_GHOST}>
+            Tambah baris
+          </button>
+        </div>
+
+        {Object.keys(rowErrors).length > 0 && (
+          <p role="alert" className="mt-3 text-xs text-fail">
+            Periksa baris yang ditandai sebelum menyimpan.
+          </p>
+        )}
+
+        {rows.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-dashed border-line bg-panel/40 p-6 text-center">
+            <p className="text-sm text-muted">Belum ada baris subtitle.</p>
+            <button type="button" onClick={addRow} className={`${BTN_GHOST} mt-3`}>
+              Tambah baris
+            </button>
+          </div>
+        ) : (
+          <ul className="mt-4 space-y-2">
+            {rows.map((row, i) => {
+              const err = rowErrors[row.id]
+              const field = err ? 'border-fail' : 'border-line'
+              return (
+                <li key={row.id} className="rounded-lg border border-line bg-panel/50 p-3">
+                  <div className="grid gap-2 sm:grid-cols-[96px_96px_minmax(0,1fr)_auto] sm:items-center">
+                    <label className="flex items-center gap-2 sm:block">
+                      <span className="w-10 shrink-0 font-mono text-[10px] uppercase tracking-[0.1em] text-faint sm:mb-1 sm:block">
+                        Awal
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={row.start}
+                        onChange={(e) => updateRow(row.id, { start: e.target.value })}
+                        aria-label={`Waktu awal baris ${i + 1}`}
+                        aria-invalid={err ? 'true' : undefined}
+                        className={`h-8 w-full rounded-md border bg-void/60 px-2 font-mono text-xs text-ink outline-none focus:border-accent ${field}`}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 sm:block">
+                      <span className="w-10 shrink-0 font-mono text-[10px] uppercase tracking-[0.1em] text-faint sm:mb-1 sm:block">
+                        Akhir
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={row.end}
+                        onChange={(e) => updateRow(row.id, { end: e.target.value })}
+                        aria-label={`Waktu akhir baris ${i + 1}`}
+                        aria-invalid={err ? 'true' : undefined}
+                        className={`h-8 w-full rounded-md border bg-void/60 px-2 font-mono text-xs text-ink outline-none focus:border-accent ${field}`}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 sm:block">
+                      <span className="w-10 shrink-0 font-mono text-[10px] uppercase tracking-[0.1em] text-faint sm:mb-1 sm:block">
+                        Teks
+                      </span>
+                      <input
+                        type="text"
+                        maxLength={500}
+                        value={row.text}
+                        onChange={(e) => updateRow(row.id, { text: e.target.value })}
+                        placeholder="Tulis subtitle…"
+                        aria-label={`Teks baris ${i + 1}`}
+                        className="h-8 w-full rounded-md border border-line bg-void/60 px-2 text-xs text-ink outline-none placeholder:text-faint focus:border-accent"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeRow(row.id)}
+                      aria-label={`Hapus baris ${i + 1}`}
+                      className="justify-self-start rounded-md border border-line px-2.5 py-1.5 text-[11px] text-muted transition hover:border-fail/50 hover:text-fail focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:justify-self-end"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                  {err && <p className="mt-2 text-xs text-fail">{err}</p>}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

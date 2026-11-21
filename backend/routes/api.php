@@ -12,3 +12,4 @@ Route::post('/clips/{clip}/prepare', [ClipController::class, 'prepare']);
 Route::get('/clips/{clip}/video', [ClipController::class, 'video']);
 Route::post('/clips/{clip}/render', [RenderJobController::class, 'store']);
 Route::get('/render-jobs/{renderJob}', [RenderJobController::class, 'show']);
+Route::get('/render-jobs/{renderJob}/download', [RenderJobController::class, 'download']);
