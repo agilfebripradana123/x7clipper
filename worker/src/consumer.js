@@ -107,10 +107,60 @@ export async function prepareClip(job, { db, clipSegment, shiftSubtitles, fileEx
   }
 }
 
+/**
+ * Job render_clip: FFmpeg trim + crop + burn-in subtitle, update progres ke DB.
+ * Gagal render tidak boleh crash consumer.
+ */
+export async function renderClipJob(job, { db, render, fileExists, log = () => {} }) {
+  if (!job?.render_job_id) return { skipped: true };
+
+  const renderJob = await db.getRenderJob(job.render_job_id);
+  if (!renderJob) {
+    log(`render job ${job.render_job_id} tidak ditemukan, job dibuang`);
+    return { skipped: true };
+  }
+  if (renderJob.status === 'done' || renderJob.status === 'failed') {
+    return { skipped: true };
+  }
+
+  try {
+    const clip = await db.getClip(renderJob.clip_id);
+    if (!clip) throw new Error(`clip ${renderJob.clip_id} tidak ditemukan`);
+    if (!clip.raw_clip_path || !(await fileExists(clip.raw_clip_path))) {
+      throw new Error('File klip mentah belum tersedia');
+    }
+
+    await db.markRenderStarted(renderJob.id);
+
+    let lastPercent = 0;
+    const result = await render({
+      clip,
+      renderJobId: renderJob.id,
+      config: clip.edit_config_json ?? {},
+      subtitles: clip.subtitle_json ?? [],
+      onProgress: async (percent) => {
+        if (percent < 100 && percent - lastPercent < 5) return;
+        lastPercent = percent;
+        try {
+          await db.updateRenderProgress(renderJob.id, percent);
+        } catch { /* progres non-fatal, render tetap jalan */ }
+      },
+    });
+
+    await db.markRenderDone(renderJob.id, result.outputUrl);
+    return { renderJobId: renderJob.id, outputUrl: result.outputUrl };
+  } catch (error) {
+    try { await db.markRenderFailed(renderJob.id, error.message); } catch { /* DB gagal pun jangan crash */ }
+    log(`render job ${renderJob.id} gagal: ${error.message}`);
+    return { failed: true, error: error.message };
+  }
+}
+
 /** Dispatch berdasarkan job.type. */
 export async function handleJob(job, deps) {
   if (job?.type === 'analyze_project') return analyzeProject(job, deps);
   if (job?.type === 'prepare_clip') return prepareClip(job, deps);
+  if (job?.type === 'render_clip') return renderClipJob(job, deps);
   deps.log?.(`tipe job tidak dikenal: ${job?.type}`);
   return { ignored: true };
 }
@@ -129,9 +179,10 @@ async function main() {
   const log = (message) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${message}`);
   const requeue = (job) => redis.lpush(JOB_LIST, JSON.stringify(job));
 
-  const [{ clipSegment }, { shiftSubtitles }, { access }] = await Promise.all([
+  const [{ clipSegment }, { shiftSubtitles }, { renderClip }, { access }] = await Promise.all([
     import('./clipper.js'),
     import('./subtitleShift.js'),
+    import('./renderer.js'),
     import('node:fs/promises'),
   ]);
   const fileExists = async (path) => {
@@ -170,6 +221,7 @@ async function main() {
       selectClips: selectClipsFromChunk,
       clipSegment,
       shiftSubtitles,
+      render: renderClip,
       fileExists,
     });
     log(`hasil: ${JSON.stringify(result)}`);

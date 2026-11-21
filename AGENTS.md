@@ -129,8 +129,8 @@ web-clipper/
 - [x] Buat endpoint `GET /api/projects/{id}` (kembalikan status pipeline + daftar `clips`).
 - [x] Buat endpoint `POST /api/clips/{id}/prepare` (push job smart clipping untuk klip yang dipilih user).
 - [x] Buat endpoint `GET /api/clips/{id}/video` (`response()->file()`, Range/206) + tracking `prepare_status`/`prepare_error`.
-- [ ] Buat endpoint `PATCH /api/clips/{id}/config` (simpan `edit_config_json` dan revisi `subtitle_json`).
-- [ ] Buat endpoint `POST /api/clips/{id}/render` dan `GET /api/render-jobs/{id}` (antrean render final + polling progres).
+- [x] Buat endpoint `PATCH /api/clips/{id}/config` (simpan `edit_config_json` dan revisi `subtitle_json`).
+- [x] Buat endpoint `POST /api/clips/{id}/render` dan `GET /api/render-jobs/{id}` (antrean render final + polling progres).
 - [x] Hubungkan consumer Redis Queue di `worker/` agar mendengarkan job dari Backend dan mengupdate status/progres ke API/DB.
 
 ### Fase 4: Frontend & Web Video Editor
@@ -169,6 +169,10 @@ web-clipper/
 - `2026-11-20`: File klip mentah deterministik `storage/raw-clips/clip-<clipId>.mp4` (pass `clipId` ke `clipSegment`) supaya cek idempoten cukup `is_file(raw_clip_path)`. Subtitle klip disimpan di `clips.subtitle_json` hasil `shiftSubtitles` (mulai `00:00`).
 - `2026-11-20`: `GET /api/clips/{id}/video` memakai `response()->file()`; Symfony `BinaryFileResponse` sudah menangani `Range` -> 206 (`Content-Range`, `Accept-Ranges: bytes`) tanpa kode manual.
 - `2026-11-20`: `phpunit.xml` memakai `REDIS_DB=15` agar test tidak berebut list `x7:jobs` dengan consumer development di DB 0 (sebelumnya job test bisa langsung dimakan consumer).
+- `2026-11-21`: `PATCH /api/clips/{id}/config` menerima `edit_config` (partial merge ke `edit_config_json` lama) + `subtitles` (replace penuh). Validasi: `aspect_ratio` `16:9|9:16`, `crop_x` `0..1`, `font_size` `8..200`, `trim_start/trim_end` harus dalam durasi klip (`end_sec - start_sec`) dan `trim_end > trim_start`, tiap subtitle `end > start`. Respons 200 mengembalikan `edit_config_json` + `subtitle_json`; `GET /api/projects/{id}` juga mengekspos keduanya agar editor bisa memuat state.
+- `2026-11-21`: `POST /api/clips/{id}/render` membuat `render_jobs` (`queued`, `progress_percent=0`) lalu push `{"type":"render_clip","render_job_id":N,"clip_id":N}` ke `x7:jobs` → 202. Job `queued|rendering` yang masih aktif dipakai ulang (202, tanpa push) agar klik Export berulang tidak menggandakan render. Klip belum siap (`prepare_status!=ready` atau file mentah hilang) → 409. Gagal enqueue → 503 + job `failed`. `GET /api/render-jobs/{id}` mengembalikan `status`/`progress_percent`/`output_url`/`error_message`.
+- `2026-11-21`: Renderer selalu men-scale output ke resolusi tetap (`1920x1080` untuk 16:9, `1080x1920` untuk 9:16) dan ASS memakai `PlayResX/Y` yang sama, supaya ukuran font/posisi subtitle konsisten dengan preview. Crop 9:16: `crop=w='trunc(ih*9/32)*2':x='trunc((iw-ih*9/16)*crop_x)'` lalu `scale=1080:1920`.
+- `2026-11-21`: `renderClip` dipisah jadi fungsi murni (`buildArgs`, `buildFilters`, `parseProgressPercent`, `trimRange`) + runner `spawn` agar testable tanpa FFmpeg. Progres dibaca dari `-progress pipe:1` (`out_time_ms`/`out_time`), di-throttle tiap 5% di consumer dan nilai mundur diabaikan. Output `storage/exports/clip-<clipId>-render-<jobId>.mp4`, `output_url` disimpan relatif terhadap root proyek. File ASS sementara di `storage/tmp/` dihapus setelah render.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
@@ -176,7 +180,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 3 (Backend API, Database & Redis Queue)
-- **Tugas Terakhir Selesai:** Fase 3 Item 4 — `POST /api/clips/{id}/prepare` idempoten (`prepare_status`/`prepare_error`), handler worker `prepare_clip` (`clip-<id>.mp4` + `subtitle_json` shifted), dan `GET /api/clips/{id}/video` (Range/206). E2E riil: clip 11 project 8 -> `ready`, file 25.9 MB, `curl Range` -> 206 `bytes 0-1023/25884911`.
-- **Tugas Berikutnya:** `PATCH /api/clips/{id}/config` (simpan `edit_config_json` + revisi `subtitle_json`) — Fase 3 Item 5, lalu render endpoint + `renderer.js`.
-- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/{ClipController,ProjectController}.php`, `backend/routes/api.php`, `backend/app/Models/Clip.php`, `backend/database/migrations/2026_11_20_000004_add_prepare_fields_to_clips_table.php`, `backend/tests/Feature/Api/{ClipPrepareApiTest,ClipVideoApiTest,ProjectShowApiTest}.php`, `backend/phpunit.xml`, `worker/src/{consumer,db}.js`, `worker/test/consumer.test.js`, `AGENTS.md`.
-- **Blocker / Catatan:** `php artisan test` PASS 18/18 (72 assertions), `npm test` PASS 44/44. Consumer user harus restart setelah perubahan worker agar handler `prepare_clip` ter-load. Test backend memakai Redis DB 15; jangan kembalikan ke DB 0 saat consumer development jalan.
+- **Tugas Terakhir Selesai:** Fase 5 Item 1 — `worker/src/renderer.js` (trim `-ss/-t` → crop/scale 16:9|9:16 dari `crop_x` → burn-in ASS, parser progres `-progress pipe:1`) + handler `render_clip` di consumer (`markRenderStarted`/`updateRenderProgress` throttle 5%/`markRenderDone|Failed`). Smoke riil clip-11: output 1080x1920, 4.004s, subtitle terbakar tanpa error filter.
+- **Tugas Berikutnya:** Fase 4 Item 1 — scaffold React + Vite + Tailwind + API client + halaman input URL YouTube dan status tracker pipeline. Sisa Fase 5: batas konkurensi render (maks 1–2), cleanup 24 jam, upload MP4 fallback.
+- **File Terakhir Diubah:** `worker/src/{renderer,consumer,db,subtitleShift}.js`, `worker/test/{renderer,consumer}.test.js`, `.env.example`, `backend/app/Http/Controllers/Api/{ClipController,ProjectController,RenderJobController}.php`, `backend/routes/api.php`, `backend/tests/Feature/Api/{ClipPrepareApiTest,ClipVideoApiTest,ClipConfigApiTest,ClipRenderApiTest,ProjectShowApiTest}.php`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** `npm test` PASS 57/57, `php artisan test` PASS 31/31 (128 assertions). User WAJIB restart `node src/consumer.js` agar handler `render_clip` ter-load; job render lama di `x7:jobs` akan diproses setelah restart. Font subtitle default `Arial` (`SUBTITLE_FONT`), harus identik dengan font CSS frontend nanti.

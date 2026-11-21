@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Clip;
 use App\Support\JobQueue;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class ClipController extends Controller
@@ -41,6 +44,64 @@ class ClipController extends Controller
         }
 
         return $this->clipResponse($clip, 202);
+    }
+
+    public function updateConfig(Request $request, Clip $clip): JsonResponse
+    {
+        $validated = $request->validate([
+            'edit_config' => ['sometimes', 'array'],
+            'edit_config.trim_start' => ['sometimes', 'numeric', 'min:0'],
+            'edit_config.trim_end' => ['sometimes', 'numeric', 'min:0'],
+            'edit_config.aspect_ratio' => ['sometimes', Rule::in(['16:9', '9:16'])],
+            'edit_config.crop_x' => ['sometimes', 'numeric', 'between:0,1'],
+            'edit_config.subtitle' => ['sometimes', 'array'],
+            'edit_config.subtitle.enabled' => ['sometimes', 'boolean'],
+            'edit_config.subtitle.position' => ['sometimes', Rule::in(['top', 'middle', 'bottom'])],
+            'edit_config.subtitle.font_size' => ['sometimes', 'integer', 'between:8,200'],
+            'edit_config.subtitle.color' => ['sometimes', 'string', 'max:32'],
+            'subtitles' => ['sometimes', 'array', 'max:2000'],
+            'subtitles.*.start' => ['required', 'numeric', 'min:0'],
+            'subtitles.*.end' => ['required', 'numeric', 'min:0'],
+            'subtitles.*.text' => ['required', 'string', 'max:500'],
+        ]);
+
+        $config = array_merge($clip->edit_config_json ?? [], $validated['edit_config'] ?? []);
+        $duration = round((float) $clip->end_sec - (float) $clip->start_sec, 3);
+        $trimStart = (float) ($config['trim_start'] ?? 0);
+        $trimEnd = (float) ($config['trim_end'] ?? $duration);
+
+        $errors = [];
+
+        if ($trimEnd <= $trimStart) {
+            $errors['edit_config.trim_end'] = 'trim_end harus lebih besar dari trim_start.';
+        } elseif ($trimStart > $duration || $trimEnd > $duration + 0.001) {
+            $errors['edit_config.trim_end'] = "Rentang trim melebihi durasi klip ({$duration} detik).";
+        }
+
+        foreach ($validated['subtitles'] ?? [] as $index => $line) {
+            if ((float) $line['end'] <= (float) $line['start']) {
+                $errors["subtitles.{$index}.end"] = 'end harus lebih besar dari start.';
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        $clip->update([
+            'edit_config_json' => $config === [] ? null : $config,
+            'subtitle_json' => array_key_exists('subtitles', $validated)
+                ? array_values($validated['subtitles'])
+                : $clip->subtitle_json,
+        ]);
+
+        return response()->json([
+            'data' => [
+                'id' => $clip->id,
+                'edit_config_json' => $clip->edit_config_json,
+                'subtitle_json' => $clip->subtitle_json,
+            ],
+        ]);
     }
 
     public function video(Clip $clip)

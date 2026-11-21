@@ -22,6 +22,12 @@ export function jsonOrNull(value) {
   return value === undefined || value === null ? null : JSON.stringify(value);
 }
 
+/** Kolom JSON dari DB bisa string (MariaDB) atau object (driver lain). */
+function parseJson(value) {
+  if (value === null || value === undefined) return null;
+  return typeof value === 'string' ? JSON.parse(value) : value;
+}
+
 export const CLIP_INSERT_SQL = `INSERT INTO clips
   (project_id, title, start_sec, end_sec, viral_score, hook_type, ai_reason, suggested_caption, subtitle_json, edit_config_json, created_at, updated_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
@@ -96,7 +102,7 @@ export function createDb({ config = dbConfigFromEnv(), createPool } = {}) {
 
     async getClip(id) {
       const rows = await query(
-        'SELECT id, project_id, start_sec, end_sec, raw_clip_path, prepare_status FROM clips WHERE id = ?',
+        'SELECT id, project_id, start_sec, end_sec, raw_clip_path, prepare_status, subtitle_json, edit_config_json FROM clips WHERE id = ?',
         [id],
       );
       const clip = rows[0];
@@ -107,6 +113,8 @@ export function createDb({ config = dbConfigFromEnv(), createPool } = {}) {
         project_id: Number(clip.project_id),
         start_sec: Number(clip.start_sec),
         end_sec: Number(clip.end_sec),
+        subtitle_json: parseJson(clip.subtitle_json),
+        edit_config_json: parseJson(clip.edit_config_json),
       };
     },
 
@@ -148,6 +156,43 @@ export function createDb({ config = dbConfigFromEnv(), createPool } = {}) {
       } finally {
         conn.release();
       }
+    },
+
+    async getRenderJob(id) {
+      const rows = await query('SELECT id, clip_id, status, progress_percent FROM render_jobs WHERE id = ?', [id]);
+      const job = rows[0];
+      if (!job) return null;
+      return {
+        ...job,
+        id: Number(job.id),
+        clip_id: Number(job.clip_id),
+        progress_percent: Number(job.progress_percent),
+      };
+    },
+
+    async markRenderStarted(id) {
+      await query("UPDATE render_jobs SET status = 'rendering', progress_percent = 0, error_message = NULL, updated_at = NOW() WHERE id = ?", [id]);
+    },
+
+    async updateRenderProgress(id, percent) {
+      await query(
+        'UPDATE render_jobs SET progress_percent = ?, updated_at = NOW() WHERE id = ?',
+        [Math.max(0, Math.min(100, Math.round(percent))), id],
+      );
+    },
+
+    async markRenderDone(id, outputUrl) {
+      await query(
+        "UPDATE render_jobs SET status = 'done', progress_percent = 100, output_url = ?, error_message = NULL, updated_at = NOW() WHERE id = ?",
+        [outputUrl, id],
+      );
+    },
+
+    async markRenderFailed(id, message) {
+      await query(
+        "UPDATE render_jobs SET status = 'failed', error_message = ?, updated_at = NOW() WHERE id = ?",
+        [message, id],
+      );
     },
 
     async close() {

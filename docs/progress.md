@@ -186,6 +186,50 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm test` — **PASS 40/40** (34 test lama + 6 test consumer).
 - **Status:** Selesai (Fase 3 Item 7 tuntas).
 
+## [2026-11-21] Endpoint Simpan Konfigurasi Editor (Fase 3 - Item 5)
+- **Tujuan:** Menyimpan state editor (trim, rasio, crop, style subtitle) dan revisi subtitle sebelum render final.
+- **File ditambahkan/diubah:**
+  - `backend/app/Http/Controllers/Api/ClipController.php` — `updateConfig()`: partial merge `edit_config_json`, replace `subtitle_json`.
+  - `backend/routes/api.php` — `PATCH /api/clips/{clip}/config`.
+  - `backend/app/Http/Controllers/Api/ProjectController.php` — `show()` mengekspos `subtitle_json` + `edit_config_json` per klip.
+  - `backend/tests/Feature/Api/ClipConfigApiTest.php` — 7 test (404, simpan+replace, partial patch, validasi rasio/crop, trim di luar durasi, subtitle terbalik, GET project state).
+- **Validasi:**
+  - `aspect_ratio` ∈ `16:9|9:16`; `crop_x` 0..1; `font_size` 8..200; `subtitle.position` ∈ `top|middle|bottom`.
+  - `trim_end > trim_start` dan rentang trim ≤ durasi klip (`end_sec - start_sec`).
+  - Tiap subtitle `end > start`; teks maks 500 karakter; maks 2000 baris.
+- **Hasil uji:** `php artisan test` — **PASS 25/25 (98 assertions)**.
+- **Status:** Selesai (Fase 3 Item 5 tuntas).
+
+## [2026-11-21] Antrean Render Final & Polling Progres (Fase 3 - Item 6)
+- **Tujuan:** Endpoint antre render final dari state editor + endpoint polling progres untuk UI.
+- **File ditambahkan/diubah:**
+  - `backend/app/Http/Controllers/Api/RenderJobController.php` — `store()` + `show()`.
+  - `backend/routes/api.php` — `POST /api/clips/{clip}/render`, `GET /api/render-jobs/{renderJob}`.
+  - `backend/tests/Feature/Api/ClipRenderApiTest.php` — 6 test (409 klip belum siap, create+push, reuse job aktif, enqueue gagal 503, show progres/output, 404).
+- **Kontrak:**
+  - Klip belum `ready` / file mentah hilang → 409 tanpa membuat job.
+  - Sukses → `render_jobs` baru (`queued`, `progress_percent=0`) + push `render_clip` → 202.
+  - Job `queued|rendering` aktif dipakai ulang → 202 tanpa push (anti double-render).
+  - Gagal enqueue Redis → job `failed` + 503.
+- **Hasil uji:** `php artisan test` — **PASS 31/31 (128 assertions)**.
+- **Status:** Selesai (Fase 3 tuntas). Handler `render_clip` + `renderer.js` menyusul di Fase 5 Item 1.
+
+## [2026-11-21] Final Render Engine & Handler Render (Fase 5 - Item 1)
+- **Tujuan:** Render final FFmpeg (trim → crop/scale → burn-in subtitle) plus update progres ke `render_jobs`.
+- **File ditambahkan/diubah:**
+  - `worker/src/renderer.js` — `buildArgs`, `buildFilters`, `parseProgressPercent`, `trimRange`, `renderClip` (spawn FFmpeg).
+  - `worker/src/subtitleShift.js` — `toAss` menerima `playResX/Y`, `alignment`, `primaryColour`; helper `assColour('#RRGGBB')`.
+  - `worker/src/db.js` — `getRenderJob`, `markRenderStarted`, `updateRenderProgress`, `markRenderDone`, `markRenderFailed`; `getClip` kini membawa `subtitle_json`/`edit_config_json`.
+  - `worker/src/consumer.js` — `renderClipJob` + dispatch `render_clip` (progres di-throttle 5%, gagal tidak crash).
+  - `worker/test/{renderer,consumer}.test.js` — test murni renderer + handler render.
+  - `.env.example` — `SUBTITLE_FONT=Arial`.
+- **Kontrak render:**
+  - Output `storage/exports/clip-<clipId>-render-<jobId>.mp4`, `output_url` relatif terhadap root proyek.
+  - 16:9 → `scale=1920:1080` + letterbox; 9:16 → crop lebar `ih*9/16` posisi `crop_x` (0..1) lalu `scale=1080:1920`.
+  - ASS sementara di `storage/tmp/` memakai PlayRes sama dengan output, dihapus setelah render.
+- **Hasil uji:** `npm test` — **PASS 57/57**. Smoke riil `clip-11.mp4`: FFmpeg exit 0, `ffprobe` 1080x1920, 4.004s, subtitle burn-in tanpa error filter.
+- **Status:** Selesai (Fase 5 Item 1 tuntas). User harus restart consumer agar handler `render_clip` aktif.
+
 
 
 

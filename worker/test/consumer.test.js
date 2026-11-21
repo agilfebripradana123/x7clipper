@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeProject, prepareClip, handleJob, MAX_ATTEMPTS, JOB_LIST } from '../src/consumer.js';
+import { analyzeProject, prepareClip, renderClipJob, handleJob, MAX_ATTEMPTS, JOB_LIST } from '../src/consumer.js';
 import { CLIP_INSERT_SQL, jsonOrNull, toClipParams } from '../src/db.js';
 
 const VTT = `WEBVTT
@@ -220,4 +220,125 @@ test('db params: JSON diserialisasi dan INSERT memakai NOW()', () => {
   assert.equal(jsonOrNull({ a: 1 }), '{"a":1}');
   assert.equal(jsonOrNull(null), null);
   assert.equal(CLIP_INSERT_SQL.match(/NOW\(\)/g).length, 2);
+});
+
+function fakeRenderDb({ renderJob = { id: 9, clip_id: 5, status: 'queued', progress_percent: 0 }, clip } = {}) {
+  const calls = [];
+  return {
+    calls,
+    db: {
+      getRenderJob: async (id) => (calls.push(['getRenderJob', id]), renderJob),
+      getClip: async (id) => (calls.push(['getClip', id]), clip),
+      markRenderStarted: async (...args) => calls.push(['markRenderStarted', ...args]),
+      updateRenderProgress: async (...args) => calls.push(['updateRenderProgress', ...args]),
+      markRenderDone: async (...args) => calls.push(['markRenderDone', ...args]),
+      markRenderFailed: async (...args) => calls.push(['markRenderFailed', ...args]),
+    },
+  };
+}
+
+const RENDER_CLIP = {
+  id: 5,
+  start_sec: 10,
+  end_sec: 40,
+  raw_clip_path: 'D:\\storage\\raw-clips\\clip-5.mp4',
+  prepare_status: 'ready',
+  edit_config_json: { aspect_ratio: '9:16', crop_x: 0.5 },
+  subtitle_json: [{ start: 0, end: 2, text: 'hai' }],
+};
+
+test('renderClipJob happy path: progres di-throttle dan output tersimpan', async () => {
+  const { db, calls } = fakeRenderDb({ clip: RENDER_CLIP });
+  const seen = [];
+
+  const result = await renderClipJob(
+    { type: 'render_clip', render_job_id: 9, clip_id: 5 },
+    {
+      db,
+      fileExists: async () => true,
+      log: () => {},
+      render: async ({ clip, renderJobId, config, subtitles, onProgress }) => {
+        seen.push({ clipId: clip.id, renderJobId, config, subtitles: subtitles.length });
+        await onProgress(20);
+        await onProgress(21);
+        await onProgress(50);
+        await onProgress(100);
+        return { outputUrl: 'storage/exports/clip-5-render-9.mp4' };
+      },
+    },
+  );
+
+  assert.deepEqual(result, { renderJobId: 9, outputUrl: 'storage/exports/clip-5-render-9.mp4' });
+  assert.deepEqual(seen, [{
+    clipId: 5,
+    renderJobId: 9,
+    config: { aspect_ratio: '9:16', crop_x: 0.5 },
+    subtitles: 1,
+  }]);
+  assert.deepEqual(calls.find(([name]) => name === 'markRenderStarted'), ['markRenderStarted', 9]);
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'updateRenderProgress').map(([, , percent]) => percent),
+    [20, 50, 100],
+  );
+  assert.deepEqual(calls.find(([name]) => name === 'markRenderDone'), [
+    'markRenderDone', 9, 'storage/exports/clip-5-render-9.mp4',
+  ]);
+});
+
+test('renderClipJob gagal render -> markRenderFailed, tidak throw', async () => {
+  const { db, calls } = fakeRenderDb({ clip: RENDER_CLIP });
+
+  const result = await renderClipJob(
+    { type: 'render_clip', render_job_id: 9 },
+    {
+      db,
+      fileExists: async () => true,
+      log: () => {},
+      render: async () => { throw new Error('ffmpeg down'); },
+    },
+  );
+
+  assert.deepEqual(result, { failed: true, error: 'ffmpeg down' });
+  assert.deepEqual(calls.find(([name]) => name === 'markRenderFailed'), ['markRenderFailed', 9, 'ffmpeg down']);
+  assert.ok(!calls.some(([name]) => name === 'markRenderDone'));
+});
+
+test('renderClipJob file mentah hilang -> gagal jelas tanpa menjalankan ffmpeg', async () => {
+  const { db, calls } = fakeRenderDb({ clip: { ...RENDER_CLIP, raw_clip_path: null } });
+  let rendered = false;
+
+  const result = await renderClipJob(
+    { type: 'render_clip', render_job_id: 9 },
+    {
+      db,
+      fileExists: async () => false,
+      log: () => {},
+      render: async () => { rendered = true; },
+    },
+  );
+
+  assert.equal(result.failed, true);
+  assert.equal(result.error, 'File klip mentah belum tersedia');
+  assert.equal(rendered, false);
+  assert.deepEqual(calls.find(([name]) => name === 'markRenderFailed'), [
+    'markRenderFailed', 9, 'File klip mentah belum tersedia',
+  ]);
+});
+
+test('renderClipJob idempoten: job selesai/gagal dilewati', async () => {
+  for (const status of ['done', 'failed']) {
+    const { db } = fakeRenderDb({
+      renderJob: { id: 9, clip_id: 5, status, progress_percent: 100 },
+      clip: RENDER_CLIP,
+    });
+    let rendered = false;
+
+    const result = await renderClipJob(
+      { type: 'render_clip', render_job_id: 9 },
+      { db, fileExists: async () => true, log: () => {}, render: async () => { rendered = true; } },
+    );
+
+    assert.equal(result.skipped, true);
+    assert.equal(rendered, false);
+  }
 });

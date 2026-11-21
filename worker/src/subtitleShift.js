@@ -44,16 +44,31 @@ function assTime(seconds) {
   return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(centis % 100).padStart(2, '0')}`;
 }
 
+/** Hex `#RRGGBB` -> ASS PrimaryColour `&HAABBGGRR`. Nilai tak valid jadi putih. */
+export function assColour(hex, alpha = '00') {
+  const match = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? ''));
+  if (!match) return `&H${alpha}FFFFFF`;
+  const rgb = match[1];
+  return `&H${alpha}${rgb.slice(4, 6)}${rgb.slice(2, 4)}${rgb.slice(0, 2)}`.toUpperCase();
+}
+
 /** Serialisasi subtitle ke ASS dasar, kompatibel filter subtitles FFmpeg. */
-export function toAss(subtitles, { fontName = 'Arial', fontSize = 36 } = {}) {
+export function toAss(subtitles, {
+  fontName = 'Arial',
+  fontSize = 36,
+  alignment = 2,
+  primaryColour = '&H00FFFFFF',
+  playResX = 1920,
+  playResY = 1080,
+} = {}) {
   const header = `[Script Info]
 ScriptType: v4.00+
-PlayResX: 1920
-PlayResY: 1080
+PlayResX: ${playResX}
+PlayResY: ${playResY}
 
 [V4+ Styles]
 Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
-Style: Default,${fontName},${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,20,20,40,1
+Style: Default,${fontName},${fontSize},${primaryColour},&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,${alignment},20,20,40,1
 
 [Events]
 Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text`;

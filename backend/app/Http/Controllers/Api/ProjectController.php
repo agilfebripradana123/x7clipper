@@ -68,6 +68,8 @@ class ProjectController extends Controller
                     'raw_clip_path' => $clip->raw_clip_path,
                     'prepare_status' => $clip->prepare_status,
                     'prepare_error' => $clip->prepare_error,
+                    'subtitle_json' => $clip->subtitle_json,
+                    'edit_config_json' => $clip->edit_config_json,
                 ])->all(),
             ],
         ]);
