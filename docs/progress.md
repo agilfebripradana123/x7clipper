@@ -298,6 +298,19 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm run build` PASS (33 modules); `php artisan test` PASS 33/33.
 - **Status:** Selesai (Fase 4 Item 5 tuntas).
 
+## [2026-11-21] Render Final & Unduh dari Editor (Fase 4 - Item 6)
+- **Tujuan:** Menghubungkan tombol Render final ke antrean worker, menampilkan progres, dan mengunduh `.mp4`.
+- **File diubah:** `frontend/src/components/Editor.jsx` — section "Ekspor", state render, polling, link unduh.
+- **Perilaku:**
+  - Render hanya aktif setelah config tersimpan; jika ada perubahan, tampil "Simpan dulu".
+  - `POST /api/clips/{id}/render` → simpan job (queued) → poll `GET /api/render-jobs/{id}` tiap 1.5 dtk sampai `done|failed`.
+  - Progress bar `role="progressbar"` + status `queued/rendering/done/failed`; progres tidak pernah mundur.
+  - Job aktif dipakai ulang (tidak dobel render); tombol nonaktif saat queued/rendering.
+  - `done` → tautan unduh `/api/render-jobs/{id}/download` + "Render ulang"; `failed` → `error_message` + "Coba lagi".
+  - Error polling berhenti (tidak spam) dengan tombol coba lagi; timer dibersihkan saat unmount/ganti klip.
+- **Hasil uji:** `npm run build` PASS (33 modules); `php artisan test` PASS 33/33 (135 assertions).
+- **Status:** Selesai (Fase 4 tuntas 6/6).
+
 
 
 

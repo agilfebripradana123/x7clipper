@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { patchClipConfig } from '../api'
+import { getRenderJob, patchClipConfig, renderClip } from '../api'
 
 const HOOK = {
   contrarian: 'Kontrarian',
@@ -236,6 +236,10 @@ export default function Editor({ clip, onBack }) {
     })),
   )
   const [rowErrors, setRowErrors] = useState({})
+  const [renderJob, setRenderJob] = useState(null)
+  const [renderBusy, setRenderBusy] = useState(false)
+  const [renderError, setRenderError] = useState(null)
+  const [pollNonce, setPollNonce] = useState(0)
   const [stageSize, setStageSize] = useState({ w: 0, h: 0 })
   const [videoSize, setVideoSize] = useState({ w: 0, h: 0 })
 
@@ -327,6 +331,41 @@ export default function Editor({ clip, onBack }) {
     setStageSize({ w: el.clientWidth, h: el.clientHeight })
     return () => ro.disconnect()
   }, [])
+
+  useEffect(() => {
+    if (!renderJob) return
+    if (renderJob.status === 'done' || renderJob.status === 'failed') return
+
+    let cancelled = false
+    let timer
+    const jobId = renderJob.id
+
+    const tick = async () => {
+      try {
+        const data = await getRenderJob(jobId)
+        if (cancelled) return
+        setRenderJob((prev) =>
+          prev &&
+          data.id === prev.id &&
+          typeof data.progress_percent === 'number' &&
+          data.progress_percent < prev.progress_percent
+            ? { ...data, progress_percent: prev.progress_percent }
+            : data,
+        )
+        if (data.status !== 'done' && data.status !== 'failed') {
+          timer = setTimeout(tick, 1500)
+        }
+      } catch (err) {
+        if (!cancelled) setRenderError(err?.message || 'Gagal memuat status render.')
+      }
+    }
+
+    timer = setTimeout(tick, 1500)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [renderJob?.id, renderJob?.status, pollNonce])
 
   const geom = useMemo(() => {
     if (!stageSize.w || !stageSize.h || !videoSize.w || !videoSize.h) return null
@@ -496,6 +535,34 @@ export default function Editor({ clip, onBack }) {
     }
   }
 
+  const handleRender = async () => {
+    if (saveState !== 'saved') return
+    if (renderBusy) return
+    if (renderJob && (renderJob.status === 'queued' || renderJob.status === 'rendering')) return
+
+    setRenderBusy(true)
+    setRenderError(null)
+    try {
+      const res = await renderClip(clip.id)
+      const job = res?.data
+      if (job) {
+        setRenderJob(job)
+      } else {
+        setRenderError('Gagal memulai render.')
+      }
+    } catch (err) {
+      const first = err?.body?.errors ? Object.values(err.body.errors).flat()[0] : null
+      setRenderError(first || err?.body?.message || err?.message || 'Gagal memulai render.')
+    } finally {
+      setRenderBusy(false)
+    }
+  }
+
+  const retryPoll = () => {
+    setRenderError(null)
+    setPollNonce((n) => n + 1)
+  }
+
   const retryVideo = () => {
     setVideoError(false)
     setReady(false)
@@ -527,6 +594,17 @@ export default function Editor({ clip, onBack }) {
         )
       })
     : null
+
+  const renderStatusLabel = !renderJob
+    ? ''
+    : renderJob.status === 'queued'
+      ? 'Menunggu antrean'
+      : renderJob.status === 'rendering'
+        ? 'Merender…'
+        : renderJob.status === 'done'
+          ? 'Render selesai'
+          : 'Render gagal'
+  const renderPct = clamp(Math.round(renderJob?.progress_percent ?? 0), 0, 100)
 
   return (
     <div className="w-full">
@@ -957,6 +1035,117 @@ export default function Editor({ clip, onBack }) {
               />
               <span className="font-mono text-xs text-muted">{subtitle.color.toUpperCase()}</span>
             </div>
+          </div>
+
+          <div className="mt-5 border-t border-line pt-5">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Ekspor</p>
+
+            {renderJob && (renderJob.status === 'queued' || renderJob.status === 'rendering') ? (
+              <div className="mt-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span role="status" aria-live="polite" className="text-muted">
+                    {renderStatusLabel}
+                  </span>
+                  <span className="font-mono text-ink">{renderPct}%</span>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-label="Progres render"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={renderPct}
+                  className="mt-2 h-1.5 w-full overflow-hidden rounded-full border border-line bg-void/70"
+                >
+                  <div
+                    className="h-full bg-accent transition-[width] duration-500 ease-out"
+                    style={{ width: `${renderPct}%` }}
+                  />
+                </div>
+                {renderError && (
+                  <div className="mt-3">
+                    <p role="alert" className="text-xs text-fail">
+                      {renderError}
+                    </p>
+                    <button type="button" onClick={retryPoll} className={`${BTN_GHOST} mt-2 w-full`}>
+                      Coba lagi
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : renderJob?.status === 'done' ? (
+              <div className="mt-3">
+                <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-ok">
+                  <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" />
+                  Render selesai
+                </div>
+                <a
+                  href={`/api/render-jobs/${renderJob.id}/download`}
+                  download
+                  className={`${BTN_PRIMARY} mt-3 w-full`}
+                >
+                  Unduh video
+                </a>
+                <button
+                  type="button"
+                  onClick={handleRender}
+                  disabled={renderBusy || saveState !== 'saved'}
+                  className={`${BTN_GHOST} mt-2 w-full`}
+                >
+                  Render ulang
+                </button>
+              </div>
+            ) : renderJob?.status === 'failed' ? (
+              <div className="mt-3">
+                <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fail">
+                  <span className="h-1.5 w-1.5 rounded-full bg-fail" aria-hidden="true" />
+                  Render gagal
+                </div>
+                <p role="alert" className="mt-2 text-xs leading-relaxed text-fail">
+                  {renderJob.error_message || 'Render gagal. Coba lagi.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleRender}
+                  disabled={renderBusy || saveState !== 'saved'}
+                  className={`${BTN_GHOST} mt-3 w-full`}
+                >
+                  Coba lagi
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <button
+                  type="button"
+                  onClick={handleRender}
+                  disabled={renderBusy || saveState !== 'saved'}
+                  className={`${BTN_PRIMARY} w-full`}
+                >
+                  {renderBusy ? 'Memulai…' : 'Render final'}
+                </button>
+                {renderError && (
+                  <p role="alert" className="text-xs text-fail">
+                    {renderError}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {saveState !== 'saved' &&
+              (!renderJob || renderJob.status === 'done' || renderJob.status === 'failed') && (
+                <div className="mt-3 rounded-md border border-line bg-panel-2/60 p-3">
+                  <p className="text-xs leading-relaxed text-muted">
+                    Render memakai pengaturan tersimpan. Simpan perubahan dulu.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saveState === 'saving'}
+                    className={`${BTN_GHOST} mt-2 w-full`}
+                  >
+                    {saveState === 'saving' ? 'Menyimpan…' : 'Simpan dulu'}
+                  </button>
+                </div>
+              )}
           </div>
         </aside>
       </div>
