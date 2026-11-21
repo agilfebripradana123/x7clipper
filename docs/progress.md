@@ -311,6 +311,20 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm run build` PASS (33 modules); `php artisan test` PASS 33/33 (135 assertions).
 - **Status:** Selesai (Fase 4 tuntas 6/6).
 
+## [2026-11-21] Batas Konkurensi Worker Render (Fase 5 - Item 2)
+- **Tujuan:** Mencegah CPU penuh saat beberapa klip dirender bersamaan.
+- **File diubah:**
+  - `worker/src/consumer.js` — `renderConcurrency()` (env `RENDER_CONCURRENCY`, default 1, clamp 1–2), `createLimiter()`, lane render terpisah dari job analisis/prepare, `inFlight` tracking + shutdown menunggu render aktif.
+  - `worker/test/consumer.test.js` — 3 test (clamp env, batas paralel + urutan, error tidak menghentikan antrean).
+  - `.env.example` — `RENDER_CONCURRENCY=1` menggantikan `WORKER_CONCURRENCY`.
+  - `docs/RUNNING.md` — catatan batas per proses consumer.
+- **Perilaku:**
+  - Job `render_clip` masuk limiter (maks 1–2 paralel); job lain tetap diproses di loop utama.
+  - Shutdown (`Ctrl+C`) menunggu render aktif selesai sebelum menutup koneksi DB.
+  - Batas berlaku per proses consumer; satu consumer per mesin.
+- **Hasil uji:** `npm test` — **PASS 60/60**.
+- **Status:** Selesai (Fase 5 Item 2 tuntas).
+
 
 
 

@@ -15,6 +15,39 @@ import { validateClips, deduplicateClips } from './validator.js';
 export const JOB_LIST = 'x7:jobs';
 export const MAX_ATTEMPTS = 3;
 
+/** Render FFmpeg dibatasi 1–2 job simultan per node (PRD non-fungsional). */
+export function renderConcurrency(env = process.env) {
+  const parsed = Number.parseInt(env.RENDER_CONCURRENCY, 10);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.min(2, Math.max(1, parsed));
+}
+
+/** Antrean task dengan batas eksekusi paralel. */
+export function createLimiter(limit) {
+  const max = Math.max(1, limit);
+  let active = 0;
+  const pending = [];
+
+  const pump = () => {
+    while (active < max && pending.length > 0) {
+      const { task, resolve, reject } = pending.shift();
+      active++;
+      Promise.resolve()
+        .then(task)
+        .then(resolve, reject)
+        .finally(() => {
+          active--;
+          pump();
+        });
+    }
+  };
+
+  return (task) => new Promise((resolve, reject) => {
+    pending.push({ task, resolve, reject });
+    pump();
+  });
+}
+
 export async function analyzeProject(job, { db, getMetadata, getTranscript, selectClips, requeue, log = () => {} }) {
   const project = await db.getProject(job.project_id);
   if (!project) {
@@ -189,7 +222,35 @@ async function main() {
     try { await access(path); return true; } catch { return false; }
   };
 
+  const deps = {
+    db,
+    requeue,
+    log,
+    getMetadata: getVideoMetadata,
+    getTranscript: downloadTranscript,
+    selectClips: selectClipsFromChunk,
+    clipSegment,
+    shiftSubtitles,
+    render: renderClip,
+    fileExists,
+  };
+
+  const renderLimit = createLimiter(renderConcurrency());
+  const inFlight = new Set();
+
+  const runJob = async (job) => {
+    log(`job ${job.type} project=${job.project_id ?? '-'} clip=${job.clip_id ?? '-'} attempt=${job.attempt || 1}`);
+    try {
+      const result = await handleJob(job, deps);
+      log(`hasil: ${JSON.stringify(result)}`);
+    } catch (error) {
+      log(`job ${job.type} error tak terduga: ${error.message}`);
+    }
+  };
+
   const shutdown = async () => {
+    if (inFlight.size > 0) log(`menunggu ${inFlight.size} render aktif selesai...`);
+    await Promise.allSettled([...inFlight]);
     log('shutdown...');
     await db.close();
     redis.disconnect();
@@ -198,7 +259,7 @@ async function main() {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
-  log(`consumer siap, BRPOP ${JOB_LIST}`);
+  log(`consumer siap, BRPOP ${JOB_LIST} (render concurrency ${renderConcurrency()})`);
   for (;;) {
     const item = await redis.brpop(JOB_LIST, 0);
     if (!item) continue;
@@ -211,20 +272,14 @@ async function main() {
       continue;
     }
 
-    log(`job ${job.type} project=${job.project_id ?? '-'} clip=${job.clip_id ?? '-'} attempt=${job.attempt || 1}`);
-    const result = await handleJob(job, {
-      db,
-      requeue,
-      log,
-      getMetadata: getVideoMetadata,
-      getTranscript: downloadTranscript,
-      selectClips: selectClipsFromChunk,
-      clipSegment,
-      shiftSubtitles,
-      render: renderClip,
-      fileExists,
-    });
-    log(`hasil: ${JSON.stringify(result)}`);
+    if (job?.type === 'render_clip') {
+      // Render berat: jalankan paralel terbatas, jangan blok job analisis/prepare.
+      const tracked = renderLimit(() => runJob(job)).finally(() => inFlight.delete(tracked));
+      inFlight.add(tracked);
+      continue;
+    }
+
+    await runJob(job);
   }
 }
 

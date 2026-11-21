@@ -101,6 +101,7 @@ YTDLP_PATH=yt-dlp
 FFMPEG_PATH=ffmpeg
 FFPROBE_PATH=ffprobe
 SUBTITLE_FONT=Arial
+RENDER_CONCURRENCY=1   # 1..2, jumlah render FFmpeg simultan
 ```
 
 Path binary boleh nama perintah (`ffmpeg`) atau path absolut Windows, mis.
@@ -271,7 +272,9 @@ dimakan consumer.
 ## 10. Catatan status
 
 - Fase 0–4 selesai: pipeline analisis, prepare klip, editor (trim/crop/subtitle), render + unduh.
-- Fase 5 belum: batas konkurensi render (saat ini semua job render diproses berurutan oleh
-  satu consumer), cleanup otomatis `storage/tmp` + `storage/raw-clips` > 24 jam, dan upload
+- Fase 5: batas konkurensi render sudah aktif (`RENDER_CONCURRENCY`, default `1`, di-clamp 1–2).
+  Job render berat berjalan di antrean terpisah sehingga tidak memblokir job analisis/prepare.
+- Fase 5 belum: cleanup otomatis `storage/tmp` + `storage/raw-clips` > 24 jam, dan upload
   MP4 lokal sebagai fallback bila YouTube memblokir IP server.
-- Jalankan tepat **satu** consumer render di mesin ini sampai konkurensi dibatasi.
+- Jalankan **satu** consumer per mesin; batas 1–2 job render berlaku per proses consumer.
+  Menjalankan dua consumer berarti batas total menjadi dua kali lipat.

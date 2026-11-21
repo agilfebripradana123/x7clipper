@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeProject, prepareClip, renderClipJob, handleJob, MAX_ATTEMPTS, JOB_LIST } from '../src/consumer.js';
+import {
+  analyzeProject, prepareClip, renderClipJob, handleJob,
+  createLimiter, renderConcurrency, MAX_ATTEMPTS, JOB_LIST,
+} from '../src/consumer.js';
 import { CLIP_INSERT_SQL, jsonOrNull, toClipParams } from '../src/db.js';
 
 const VTT = `WEBVTT
@@ -341,4 +344,47 @@ test('renderClipJob idempoten: job selesai/gagal dilewati', async () => {
     assert.equal(result.skipped, true);
     assert.equal(rendered, false);
   }
+});
+
+test('renderConcurrency dibatasi 1..2 dari env', () => {
+  assert.equal(renderConcurrency({}), 1);
+  assert.equal(renderConcurrency({ RENDER_CONCURRENCY: '0' }), 1);
+  assert.equal(renderConcurrency({ RENDER_CONCURRENCY: '2' }), 2);
+  assert.equal(renderConcurrency({ RENDER_CONCURRENCY: '9' }), 2);
+  assert.equal(renderConcurrency({ RENDER_CONCURRENCY: 'abc' }), 1);
+});
+
+test('createLimiter membatasi task paralel dan mempertahankan urutan antrean', async () => {
+  const limit = createLimiter(2);
+  let active = 0;
+  let maxActive = 0;
+  const started = [];
+
+  const makeTask = (id, delay) => async () => {
+    active++;
+    maxActive = Math.max(maxActive, active);
+    started.push(id);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    active--;
+    return id;
+  };
+
+  const results = await Promise.all([
+    limit(makeTask('a', 30)),
+    limit(makeTask('b', 10)),
+    limit(makeTask('c', 5)),
+    limit(makeTask('d', 5)),
+  ]);
+
+  assert.equal(maxActive, 2);
+  assert.deepEqual(results, ['a', 'b', 'c', 'd']);
+  assert.deepEqual(started.slice(0, 2).sort(), ['a', 'b']);
+});
+
+test('createLimiter meneruskan error tanpa menghentikan antrean', async () => {
+  const limit = createLimiter(1);
+  const ok = [];
+  await assert.rejects(limit(async () => { throw new Error('boom'); }), /boom/);
+  assert.equal(await limit(async () => { ok.push('next'); return 42; }), 42);
+  assert.deepEqual(ok, ['next']);
 });

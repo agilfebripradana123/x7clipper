@@ -143,7 +143,7 @@ web-clipper/
 
 ### Fase 5: Final Render Engine & Hardening
 - [ ] Buat `worker/src/renderer.js`: builder perintah FFmpeg untuk `trim` + `crop 9:16` (hitung dari rasio `crop_x`) + `burn-in` subtitle `.ass` dengan font identik frontend + parser progres persen FFmpeg.
-- [ ] Terapkan batas konkurensi worker render (maks 1–2 job simultan).
+- [x] Terapkan batas konkurensi worker render (maks 1–2 job simultan).
 - [ ] Buat scheduled cleanup job untuk menghapus file sementara di `storage/tmp/` dan `storage/raw-clips/` yang berusia > 24 jam.
 - [ ] Tambahkan endpoint & UI cadangan: Upload file MP4 lokal (fallback jika IP server terkena blokir YouTube).
 
@@ -173,6 +173,7 @@ web-clipper/
 - `2026-11-21`: `POST /api/clips/{id}/render` membuat `render_jobs` (`queued`, `progress_percent=0`) lalu push `{"type":"render_clip","render_job_id":N,"clip_id":N}` ke `x7:jobs` → 202. Job `queued|rendering` yang masih aktif dipakai ulang (202, tanpa push) agar klik Export berulang tidak menggandakan render. Klip belum siap (`prepare_status!=ready` atau file mentah hilang) → 409. Gagal enqueue → 503 + job `failed`. `GET /api/render-jobs/{id}` mengembalikan `status`/`progress_percent`/`output_url`/`error_message`.
 - `2026-11-21`: Renderer selalu men-scale output ke resolusi tetap (`1920x1080` untuk 16:9, `1080x1920` untuk 9:16) dan ASS memakai `PlayResX/Y` yang sama, supaya ukuran font/posisi subtitle konsisten dengan preview. Crop 9:16: `crop=w='trunc(ih*9/32)*2':x='trunc((iw-ih*9/16)*crop_x)'` lalu `scale=1080:1920`.
 - `2026-11-21`: `renderClip` dipisah jadi fungsi murni (`buildArgs`, `buildFilters`, `parseProgressPercent`, `trimRange`) + runner `spawn` agar testable tanpa FFmpeg. Progres dibaca dari `-progress pipe:1` (`out_time_ms`/`out_time`), di-throttle tiap 5% di consumer dan nilai mundur diabaikan. Output `storage/exports/clip-<clipId>-render-<jobId>.mp4`, `output_url` disimpan relatif terhadap root proyek. File ASS sementara di `storage/tmp/` dihapus setelah render.
+- `2026-11-21`: Konkurensi render dibatasi via `RENDER_CONCURRENCY` (default `1`, clamp `1..2`) + limiter internal (`createLimiter`). Job `render_clip` dijalankan di lane sendiri sehingga tidak memblokir `analyze_project`/`prepare_clip`; shutdown menunggu render aktif (`Promise.allSettled`) sebelum menutup DB.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
@@ -180,7 +181,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 5 (Final Render Engine & Hardening)
-- **Tugas Terakhir Selesai:** Fase 4 Item 6 — section Ekspor di `Editor.jsx`: tombol Render final (hanya saat config tersimpan), `renderClip` → polling `getRenderJob` 1.5 dtk, progress bar `role=progressbar`, state queued/rendering/done/failed, retry, link unduh `/api/render-jobs/{id}/download`, reuse job aktif tanpa double render. Build PASS (33 modules).
-- **Tugas Berikutnya:** Fase 5 Item 2 — batas konkurensi worker render (maks 1–2 job), lalu cleanup `storage/tmp` + `raw-clips` > 24 jam, lalu upload MP4 fallback (endpoint + UI).
-- **File Terakhir Diubah:** `frontend/src/{App.jsx,api.js,components/{StatusTracker,ClipList,Editor}.jsx,index.css}`, `frontend/{package.json,vite.config.js,index.html}`, `worker/src/{renderer,consumer,db,subtitleShift}.js`, `backend/app/Http/Controllers/Api/{ClipController,ProjectController,RenderJobController}.php`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Fase 4 tuntas (6/6): `npm run build` PASS (33 modules), `php artisan test` PASS 33/33, `npm test` (worker) PASS 57/57. Dev: `npm run dev` di `frontend/` (user jalankan manual), backend `php artisan serve` port 8000, consumer `node src/consumer.js` manual. Render memakai config tersimpan — editor memaksa Simpan dulu sebelum Render final.
+- **Tugas Terakhir Selesai:** Fase 5 Item 2 — batas konkurensi render: `RENDER_CONCURRENCY` (default 1, clamp 1..2) + `createLimiter`; job `render_clip` di lane terpisah dari analisis/prepare, shutdown menunggu render aktif. `npm test` PASS 60/60.
+- **Tugas Berikutnya:** Fase 5 Item 3 — scheduled cleanup `storage/tmp` + `storage/raw-clips` > 24 jam (command/script terjadwal, jangan sentuh `storage/exports` hasil render).
+- **File Terakhir Diubah:** `worker/src/consumer.js`, `worker/test/consumer.test.js`, `.env.example`, `frontend/src/components/Editor.jsx`, `backend/app/Http/Controllers/Api/RenderJobController.php`, `backend/routes/api.php`, `docs/{RUNNING.md,progress.md}`, `README.md`, `AGENTS.md`.
+- **Blocker / Catatan:** `npm test` (worker) PASS 60/60, `php artisan test` PASS 33/33 (135 assertions), `npm run build` PASS. Restart consumer setelah ubah worker. Batas render berlaku per proses consumer; jalankan satu consumer per mesin. Render memakai config tersimpan (editor memaksa Simpan dulu).
