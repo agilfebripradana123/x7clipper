@@ -325,6 +325,19 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm test` — **PASS 60/60**.
 - **Status:** Selesai (Fase 5 Item 2 tuntas).
 
+## [2026-11-21] Scheduled Cleanup File Sementara (Fase 5 - Item 3)
+- **Tujuan:** Membersihkan file sementara di `storage/tmp/` dan potongan klip di `storage/raw-clips/` yang berusia lebih dari 24 jam agar disk tidak penuh.
+- **File ditambahkan/diubah:**
+  - `worker/scripts/cleanup.js` — script pembersih dengan opsi `--dry-run`, konfigurasi umur via `CLEANUP_MAX_AGE_HOURS` (default 24 jam).
+  - `worker/test/cleanup.test.js` — 5 test (hapus file > 24 jam, perlindungan file baru dan `.gitkeep`, mode `--dry-run`, direktori tidak ada, toleransi error permission).
+  - `worker/package.json` — penambahan script `npm run cleanup`.
+  - `.env.example` — penambahan variabel `CLEANUP_MAX_AGE_HOURS=24`.
+- **Guardrail:**
+  - File `.gitkeep` tidak pernah dihapus.
+  - Folder `storage/exports/` (hasil render final) dan `storage/transcripts/` tidak masuk target penghapusan.
+- **Hasil uji:** `npm test` — **PASS 65/65**.
+- **Status:** Selesai (Fase 5 Item 3 tuntas).
+
 
 
 

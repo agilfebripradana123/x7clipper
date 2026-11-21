@@ -144,7 +144,7 @@ web-clipper/
 ### Fase 5: Final Render Engine & Hardening
 - [ ] Buat `worker/src/renderer.js`: builder perintah FFmpeg untuk `trim` + `crop 9:16` (hitung dari rasio `crop_x`) + `burn-in` subtitle `.ass` dengan font identik frontend + parser progres persen FFmpeg.
 - [x] Terapkan batas konkurensi worker render (maks 1–2 job simultan).
-- [ ] Buat scheduled cleanup job untuk menghapus file sementara di `storage/tmp/` dan `storage/raw-clips/` yang berusia > 24 jam.
+- [x] Buat scheduled cleanup job untuk menghapus file sementara di `storage/tmp/` dan `storage/raw-clips/` yang berusia > 24 jam.
 - [ ] Tambahkan endpoint & UI cadangan: Upload file MP4 lokal (fallback jika IP server terkena blokir YouTube).
 
 ---
@@ -181,7 +181,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 5 (Final Render Engine & Hardening)
-- **Tugas Terakhir Selesai:** Fase 5 Item 2 — batas konkurensi render: `RENDER_CONCURRENCY` (default 1, clamp 1..2) + `createLimiter`; job `render_clip` di lane terpisah dari analisis/prepare, shutdown menunggu render aktif. `npm test` PASS 60/60.
-- **Tugas Berikutnya:** Fase 5 Item 3 — scheduled cleanup `storage/tmp` + `storage/raw-clips` > 24 jam (command/script terjadwal, jangan sentuh `storage/exports` hasil render).
-- **File Terakhir Diubah:** `worker/src/consumer.js`, `worker/test/consumer.test.js`, `.env.example`, `frontend/src/components/Editor.jsx`, `backend/app/Http/Controllers/Api/RenderJobController.php`, `backend/routes/api.php`, `docs/{RUNNING.md,progress.md}`, `README.md`, `AGENTS.md`.
-- **Blocker / Catatan:** `npm test` (worker) PASS 60/60, `php artisan test` PASS 33/33 (135 assertions), `npm run build` PASS. Restart consumer setelah ubah worker. Batas render berlaku per proses consumer; jalankan satu consumer per mesin. Render memakai config tersimpan (editor memaksa Simpan dulu).
+- **Tugas Terakhir Selesai:** Fase 5 Item 3 — `worker/scripts/cleanup.js`: pembersihan berkala `storage/tmp/` dan `storage/raw-clips/` untuk file > 24 jam (`CLEANUP_MAX_AGE_HOURS`), lindungi `.gitkeep` dan tidak pernah sentuh `storage/exports/` atau `storage/transcripts/`, opsi `--dry-run`, script `npm run cleanup`. Test PASS 65/65.
+- **Tugas Berikutnya:** Fase 5 Item 4 — endpoint & UI cadangan: upload file MP4 lokal (fallback jika IP server terkena blokir YouTube).
+- **File Terakhir Diubah:** `worker/scripts/cleanup.js`, `worker/test/cleanup.test.js`, `worker/package.json`, `.env.example`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** `npm test` (worker) PASS 65/65, `php artisan test` PASS 33/33, `npm run build` PASS. Cleanup bisa dijalankan manual (`npm run cleanup`) atau via cron/Task Scheduler OS.
