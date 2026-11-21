@@ -208,6 +208,8 @@ Output yang diharapkan: `PASS` untuk `yt-dlp`, `ffmpeg`, `ffprobe`, Redis, dan 9
 
 ## Menjalankan
 
+Panduan lengkap (prasyarat, env, urutan start, troubleshooting): **[`docs/RUNNING.md`](docs/RUNNING.md)**.
+
 Butuh **dua terminal terpisah**. Jangan jalankan daemon dari proses lain/agent.
 
 ```bash
