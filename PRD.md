@@ -85,6 +85,12 @@ Sistem mengekstrak transkrip bertimestamp, mengirimkannya ke LLM melalui **9rout
   - Riwayat 20 proyek terbaru ditampilkan di halaman utama (judul, status badge, jumlah klip, tombol buka & hapus).
   - URL routing (`/projects/:projectId`, `/projects/:projectId/clips/:clipId`) menjaga state saat refresh halaman (F5) dan auto-resume proses polling (analisis, prepare klip, dan render).
 
+### FR-6: Autonomous Auto-Editor Agent (Jalur 1)
+- **Vision Framing Sub-Agent:** Ekstraksi 3 frame sampel ringan (15%, 50%, 85%), evaluasi visual via model vision 9router untuk menentukan `layout_mode` (`full_crop` vs `blur_bg`) dan posisi horizontal `crop_x` (0.0 - 1.0) dengan fallback aman.
+- **Semantic Cut & Pacing Sub-Agent:** Cue-ID Anchoring (`[C1|start-end]`) dengan deteksi jeda hening `[GAP]`, pemangkasan dead-air/filler bertele-tele (`drop_cue_ids`), buffer bicara 0.15s, dan merge gap <= 0.35s.
+- **Self-Verification Loop:** Evaluasi total durasi aktif (target 15s <= duration <= 58s untuk Shorts/Reels). Otomatis meminta iterasi kedua ke 9router jika durasi > 58s.
+- **Agent Decision Transparency:** Menyimpan `agent_notes` (framing_reason, pacing_reason, iterations) yang ditampilkan pada Studio Web Editor.
+
 ---
 
 ## 6. Spesifikasi Non-Fungsional (Non-Functional Requirements)

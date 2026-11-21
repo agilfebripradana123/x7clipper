@@ -164,7 +164,8 @@ web-clipper/
 - [x] AI Editorial Plan: skema `auto_edit` di 9router & validator (`hook_banner_text`, `recommended_layout`, `highlight_keywords`).
 - [x] Auto Jump-Cut & Subtitle Highlight: deteksi jeda hening > 1.2 detik (`detectJumpCuts`), subtitle proporsional 2-3 kata dengan highlight kuning tebal (`toAss`), dan auto setup cuts saat `prepare_clip`.
 - [x] Web Editor Studio: 2-kolom desktop layout, canvas preview vertikal dengan drag-to-pan crop, visual multi-cut timeline (split playhead shortcut `S`, delete segment, auto-skip dead air saat diputar, undo `Ctrl+Z`), 3 tab panel (`Gaya & Hook`, `Subtitle`, `Export`), 3 preset 1-klik (`Hormozi`, `Podcast`, `Breaking`), dan debounced auto-save.
-- [x] Verifikasi: PHPUnit 37/37 PASS, worker node test 71/71 PASS, frontend build PASS, dan verifikasi riil FFmpeg render CLI berhasil.
+- [x] Autonomous Auto-Editor Agent (Jalur 1): Sub-agent Vision Framing (`visionFramer.js`, ekstrak 3 frame sampel, tentukan layout 9:16 & `crop_x`) + Sub-agent Semantic Cut & Pacing (`semanticPacer.js`, Cue-ID Anchoring, pangkas filler/basa-basi, loop self-verification durasi <= 58s).
+- [x] Verifikasi: PHPUnit 37/37 PASS, worker node test 81/81 PASS, frontend build PASS, dan verifikasi riil FFmpeg render CLI berhasil.
 
 ---
 
@@ -206,7 +207,8 @@ web-clipper/
   - Skema AI `auto_edit`: hook banner, rekomendasi layout, keyword highlights di `ninerouter.js` & `validator.js`.
   - Auto Jump-Cut & Subtitle Highlight: deteksi jeda hening > 1.2s, cuts otomatis di `prepare_clip`, highlight kuning `#FFE600` di generator ASS & preview.
   - Web Editor Studio Layout: 2 kolom desktop, drag-to-pan crop, visual timeline cuts (split `S`, delete segment, auto-skip dead air, undo `Ctrl+Z`), 3 tab panel (`Gaya & Hook`, `Subtitle`, `Export`), 3 preset 1-klik (`Hormozi`, `Podcast`, `Breaking`), auto-save debounced.
-  - Verifikasi: PHPUnit 37/37 PASS, worker Node test 71/71 PASS, frontend build PASS, dan verifikasi riil FFmpeg render CLI berhasil.
+  - Autonomous Auto-Editor Agent (Jalur 1): Sub-agent Vision Framing (`visionFramer.js`, ekstrak 3 frame sampel, tentukan layout 9:16 & `crop_x`) + Sub-agent Semantic Cut & Pacing (`semanticPacer.js`, Cue-ID Anchoring, pangkas filler/basa-basi, loop self-verification durasi <= 58s).
+  - Verifikasi: PHPUnit 37/37 PASS, worker node test 81/81 PASS, frontend build PASS, dan verifikasi riil FFmpeg render CLI berhasil.
 - **Tugas Berikutnya:** Sistem AI Auto-Editor & Web Clipper siap digunakan secara optimal.
 - **File Terakhir Diubah:** `worker/src/{clipper,renderer,subtitleShift,consumer,db,ninerouter,validator}.js`, `frontend/src/components/Editor.jsx`, `docs/progress.md`, `PRD.md`, `AGENTS.md`.
 - **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 37/37 (159 assertions), `npm test` (worker) PASS 71/71, `npm run build` PASS.

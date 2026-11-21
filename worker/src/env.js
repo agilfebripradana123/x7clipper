@@ -17,7 +17,13 @@ export async function loadEnv(envPath = resolve(projectRoot, '.env')) {
       const value = trimmed.slice(eq + 1).trim();
       if (!process.env[key]) process.env[key] = value;
     }
+    if (!process.env.NINEROUTER_VISION_MODEL && process.env.NINEROUTER_MODEL) {
+      process.env.NINEROUTER_VISION_MODEL = process.env.NINEROUTER_MODEL;
+    }
   } catch {
     /* .env opsional jika env sudah diset di shell */
+  }
+  if (!process.env.NINEROUTER_VISION_MODEL && process.env.NINEROUTER_MODEL) {
+    process.env.NINEROUTER_VISION_MODEL = process.env.NINEROUTER_MODEL;
   }
 }

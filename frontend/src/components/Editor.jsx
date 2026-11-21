@@ -752,6 +752,21 @@ export default function Editor({ clip, onBack }) {
           {/* Tab 1: Gaya & Hook */}
           {activeTab === 'style' && (
             <div className="space-y-4 rounded-xl border border-line bg-panel/60 p-4">
+              {/* Agent Notes Banner (jika dihasilkan oleh Auto-Editor Agent) */}
+              {clip.edit_config_json?.agent_notes && (
+                <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 text-xs leading-relaxed">
+                  <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-accent font-bold mb-1">
+                    <span>✨ Auto-Editor Agent Decision</span>
+                  </div>
+                  <p className="text-ink/90 text-[11px]">
+                    <strong>Framing:</strong> {clip.edit_config_json.agent_notes.framing_reason}
+                  </p>
+                  <p className="text-muted text-[11px] mt-1">
+                    <strong>Pacing:</strong> {clip.edit_config_json.agent_notes.pacing_reason}
+                  </p>
+                </div>
+              )}
+
               {/* 3 Preset 1-Klik */}
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">

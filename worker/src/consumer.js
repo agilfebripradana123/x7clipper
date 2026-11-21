@@ -16,6 +16,7 @@ import { chunkSegments } from './chunker.js';
 import { selectClipsFromChunk } from './ninerouter.js';
 import { validateClips, deduplicateClips } from './validator.js';
 import { detectJumpCuts } from './subtitleShift.js';
+import { runAutoEditorAgent } from './agents/autoEditorAgent.js';
 
 export const JOB_LIST = 'x7:jobs';
 export const MAX_ATTEMPTS = 3;
@@ -136,7 +137,15 @@ export async function analyzeProject(job, { db, getMetadata, getTranscript, sele
  * Job prepare_clip: potong segmen via yt-dlp + FFmpeg, geser subtitle ke 00:00,
  * simpan raw_clip_path + subtitle_json. Idempoten, tidak pernah throw keluar.
  */
-export async function prepareClip(job, { db, clipSegment, clipLocalFile, shiftSubtitles, fileExists, log = () => {} }) {
+export async function prepareClip(job, {
+  db,
+  clipSegment,
+  clipLocalFile,
+  shiftSubtitles,
+  autoEditor = runAutoEditorAgent,
+  fileExists,
+  log = () => {},
+}) {
   if (!job?.clip_id) return { skipped: true };
 
   const clip = await db.getClip(job.clip_id);
@@ -162,18 +171,7 @@ export async function prepareClip(job, { db, clipSegment, clipLocalFile, shiftSu
     const segmentMap = await db.getProjectTranscript(clip.project_id);
     // Pecah ke format subtitle viral pendek (2-3 kata per baris)
     const subtitles = shiftSubtitles(Object.values(segmentMap ?? {}), clip.start_sec, clip.end_sec, { viral: true, maxWords: 3 });
-
-    // Auto Jump-Cut: deteksi jeda hening > 1.2 detik dan siapkan cuts aktif
-    const clipDur = Number(clip.end_sec) - Number(clip.start_sec);
-    const autoCuts = detectJumpCuts(subtitles, clipDur, { minGapSec: 1.2, bufferSec: 0.15 });
-
-    const currentConfig = clip.edit_config_json ?? {};
-    const updatedConfig = {
-      ...currentConfig,
-      cuts: currentConfig.cuts && currentConfig.cuts.length > 0 ? currentConfig.cuts : autoCuts,
-      trim_start: 0,
-      trim_end: Number(clipDur.toFixed(3)),
-    };
+    const clipDur = Number((Number(clip.end_sec) - Number(clip.start_sec)).toFixed(2));
 
     // Upload lokal: potong langsung dari file video lokal via FFmpeg, tanpa yt-dlp.
     const isLocalUpload = project.source_type === 'upload' && project.local_video_path;
@@ -188,6 +186,31 @@ export async function prepareClip(job, { db, clipSegment, clipLocalFile, shiftSu
         clipId: `clip-${clip.id}`,
       }));
     }
+
+    // Jalankan Autonomous Auto-Editor Agent untuk framing visual & semantic pacing
+    let agentConfig = null;
+    try {
+      agentConfig = await autoEditor({
+        clipPath,
+        durationSec: clipDur,
+        shiftedSubtitles: subtitles,
+        clipMeta: clip,
+        tmpDir: resolve(projectRoot, 'storage/tmp'),
+        log,
+      });
+    } catch (agentErr) {
+      log(`[AutoEditorAgent] Error: ${agentErr.message}. Fallback ke default jump cuts.`);
+    }
+
+    const currentConfig = clip.edit_config_json ?? {};
+    const autoCuts = detectJumpCuts(subtitles, clipDur, { minGapSec: 1.2, bufferSec: 0.15 });
+
+    const updatedConfig = agentConfig || {
+      ...currentConfig,
+      cuts: currentConfig.cuts && currentConfig.cuts.length > 0 ? currentConfig.cuts : autoCuts,
+      trim_start: 0,
+      trim_end: Number(clipDur.toFixed(3)),
+    };
 
     await db.markClipReady(clip.id, { rawClipPath: clipPath, subtitles, editConfig: updatedConfig });
     return { clipId: clip.id, clipPath, subtitles: subtitles.length };
