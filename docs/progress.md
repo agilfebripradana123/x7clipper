@@ -243,6 +243,18 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm run build` — **PASS** (31 modules, CSS 21.31 kB, JS 235.95 kB).
 - **Status:** Selesai (Fase 4 Item 1 tuntas). Placeholder "Lihat rekomendasi klip" diganti di Item 2.
 
+## [2026-11-21] Daftar Rekomendasi Klip (Fase 4 - Item 2)
+- **Tujuan:** Menampilkan klip hasil AI dengan skor, hook, durasi, alasan, dan aksi persiapan klip.
+- **File ditambahkan/diubah:**
+  - `frontend/src/components/ClipList.jsx` — grid kartu klip, badge skor viral, chip hook (ID), durasi `m:ss`, alasan AI, caption; aksi "Edit Klip"/"Coba lagi" → `prepareClip`; badge state `idle|preparing|ready|failed`; empty state.
+  - `frontend/src/App.jsx` — `shouldKeepPolling` (lanjut polling saat `ready` tapi masih ada klip `preparing`), render `<ClipList>` di bawah tracker.
+- **Perilaku:**
+  - Klik "Edit Klip" → POST prepare, lalu refresh project; poll 2 dtk berhenti saat tidak ada klip `preparing`.
+  - Error prepare (409/503/jaringan) tampil per kartu (`role="alert"`), daftar tetap utuh.
+  - `ready` → tombol "Buka editor" placeholder (item 3).
+- **Hasil uji:** `npm run build` — **PASS** (32 modules, CSS 23.50 kB, JS 241.23 kB).
+- **Status:** Selesai (Fase 4 Item 2 tuntas).
+
 
 
 

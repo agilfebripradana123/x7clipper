@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createProject, getProject } from './api'
 import StatusTracker from './components/StatusTracker'
+import ClipList from './components/ClipList'
 
 const BTN =
   'inline-flex h-11 items-center justify-center rounded-lg px-5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40'
@@ -16,6 +17,14 @@ const STATUS_LABEL = {
 }
 
 const ACTIVE = ['queued', 'extracting', 'analyzing']
+
+function shouldKeepPolling(project) {
+  if (!project || project.status === 'failed') return false
+  if (project.status === 'ready') {
+    return (project.clips || []).some((c) => c.prepare_status === 'preparing')
+  }
+  return true
+}
 
 function formatDuration(sec) {
   if (typeof sec !== 'number' || !isFinite(sec) || sec < 0) return null
@@ -56,9 +65,11 @@ export default function App() {
   const [fatalError, setFatalError] = useState(null)
   const [project, setProject] = useState(null)
 
+  const anyPreparing = project?.clips?.some((c) => c.prepare_status === 'preparing') ?? false
+
   useEffect(() => {
     if (!project) return
-    if (project.status === 'ready' || project.status === 'failed') return
+    if (!shouldKeepPolling(project)) return
 
     let cancelled = false
     let timer
@@ -69,7 +80,7 @@ export default function App() {
         const data = await getProject(id)
         if (cancelled) return
         setProject(data)
-        if (data.status !== 'ready' && data.status !== 'failed') {
+        if (shouldKeepPolling(data)) {
           timer = setTimeout(tick, 2000)
         }
       } catch (err) {
@@ -82,7 +93,7 @@ export default function App() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [project?.id, project?.status])
+  }, [project?.id, project?.status, anyPreparing])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -113,6 +124,16 @@ export default function App() {
     setFieldError(null)
     setFatalError(null)
     setCreating(false)
+  }
+
+  const refresh = async () => {
+    if (!project) return
+    try {
+      const data = await getProject(project.id)
+      setProject(data)
+    } catch (err) {
+      setFatalError(err?.message || 'Gagal memuat status.')
+    }
   }
 
   const status = project?.status
@@ -300,21 +321,13 @@ export default function App() {
                       <p className="font-display text-2xl font-semibold text-ink">
                         <span className="text-accent">{clipCount}</span> klip siap
                       </p>
-                      <p className="mt-1 text-sm text-muted">Pilih klip untuk dirapikan di editor.</p>
+                      <p className="mt-1 text-sm text-muted">
+                        Tinjau rekomendasi di bawah, lalu siapkan klip untuk diedit.
+                      </p>
                     </div>
-                    <div className="flex flex-col gap-2.5 sm:flex-row">
-                      <button
-                        type="button"
-                        disabled
-                        title="Tersedia di tahap berikutnya"
-                        className={BTN_PRIMARY}
-                      >
-                        Lihat rekomendasi klip
-                      </button>
-                      <button type="button" onClick={reset} className={BTN_GHOST}>
-                        Analisis video lain
-                      </button>
-                    </div>
+                    <button type="button" onClick={reset} className={BTN_GHOST}>
+                      Analisis video lain
+                    </button>
                   </div>
                 ) : status === 'failed' ? (
                   <div className="mt-7 border-t border-line pt-6">
@@ -340,6 +353,10 @@ export default function App() {
             </section>
           )}
         </div>
+
+        {project?.status === 'ready' && (
+          <ClipList project={project} onRefresh={refresh} onReset={reset} />
+        )}
       </main>
 
       <footer className="mx-auto w-full max-w-5xl px-5 py-8 sm:px-8">
