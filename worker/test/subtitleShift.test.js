@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shiftSubtitles, toSrt, toAss } from '../src/subtitleShift.js';
+import { shiftSubtitles, splitViralSubtitles, toSrt, toAss } from '../src/subtitleShift.js';
 
 const sampleSegments = [
   { start: 5, end: 9, text: 'Sebelum klip' },
@@ -51,4 +51,30 @@ test('toAss menghasilkan script ASS dengan header dan event dialog', () => {
   assert.ok(ass.includes('[Script Info]'));
   assert.ok(ass.includes('Style: Default,Arial,24'));
   assert.ok(ass.includes('Dialogue: 0,0:00:00.00,0:00:02.50,Default,,0,0,0,,Teks pertama'));
+});
+
+test('splitViralSubtitles memecah baris panjang jadi 2-3 kata proporsional', () => {
+  const subs = [
+    { start: 0.0, end: 6.0, text: 'satu dua tiga empat lima enam' },
+  ];
+  const viral = splitViralSubtitles(subs, { maxWordsPerLine: 3 });
+
+  assert.equal(viral.length, 2);
+  assert.equal(viral[0].text, 'satu dua tiga');
+  assert.equal(viral[1].text, 'empat lima enam');
+  assert.equal(viral[0].start, 0.0);
+  assert.equal(viral[1].end, 6.0);
+  assert.ok(viral[0].end <= viral[1].start + 0.01);
+});
+
+test('shiftSubtitles dengan opsi viral=true menghasilkan potongan pendek', () => {
+  const segs = [
+    { start: 0, end: 10, text: 'halo kawan semua selamat datang di podcast kami hari ini' }
+  ];
+  const result = shiftSubtitles(segs, 0, 10, { viral: true, maxWords: 3 });
+  assert.ok(result.length > 1);
+  for (const r of result) {
+    const wordCount = r.text.split(/\s+/).length;
+    assert.ok(wordCount <= 3);
+  }
 });

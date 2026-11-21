@@ -111,7 +111,8 @@ export async function clipSegment(url, startSec, endSec, {
     '--force-keyframes-at-cuts',
     '--ffmpeg-location', dirname(ffmpeg),
     '--no-playlist',
-    '-f', 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best',
+    '-f', 'bv*[height<=1440]+ba/b',
+    '--merge-output-format', 'mp4',
     '-o', tempFile,
     url,
   ];

@@ -134,18 +134,30 @@ web-clipper/
 - [x] Hubungkan consumer Redis Queue di `worker/` agar mendengarkan job dari Backend dan mengupdate status/progres ke API/DB.
 
 ### Fase 4: Frontend & Web Video Editor
-- [ ] Setup React + Vite + Tailwind + API client dan halaman Input URL YouTube + status tracker pipeline.
-- [ ] Buat halaman Daftar Rekomendasi Klip (tampilkan judul, `viral_score`, `hook_type`, alasan AI, durasi, dan tombol "Edit Klip").
-- [ ] Buat komponen Web Editor: HTML5 `<video>` player + dual-handle slider trim start/end.
-- [ ] Buat kontrol rasio aspek (`16:9` / `9:16`) dengan overlay frame crop yang bisa digeser horizontal (simpan `crop_x` dalam `0.0 - 1.0`).
-- [ ] Buat panel editor teks subtitle + live caption overlay di atas video player.
-- [ ] Hubungkan tombol "Export / Render Final" dengan progress bar polling dan tombol download `.mp4`.
+- [x] Setup React + Vite + Tailwind + API client dan halaman Input URL YouTube + status tracker pipeline.
+- [x] Buat halaman Daftar Rekomendasi Klip (tampilkan judul, `viral_score`, `hook_type`, alasan AI, durasi, dan tombol "Edit Klip").
+- [x] Buat komponen Web Editor: HTML5 `<video>` player + dual-handle slider trim start/end.
+- [x] Buat kontrol rasio aspek (`16:9` / `9:16`) dengan overlay frame crop yang bisa digeser horizontal (simpan `crop_x` dalam `0.0 - 1.0`).
+- [x] Buat panel editor teks subtitle + live caption overlay di atas video player.
+- [x] Hubungkan tombol "Export / Render Final" dengan progress bar polling dan tombol download `.mp4`.
 
 ### Fase 5: Final Render Engine & Hardening
-- [ ] Buat `worker/src/renderer.js`: builder perintah FFmpeg untuk `trim` + `crop 9:16` (hitung dari rasio `crop_x`) + `burn-in` subtitle `.ass` dengan font identik frontend + parser progres persen FFmpeg.
+- [x] Buat `worker/src/renderer.js`: builder perintah FFmpeg untuk `trim` + `crop 9:16` (hitung dari rasio `crop_x`) + `burn-in` subtitle `.ass` dengan font identik frontend + parser progres persen FFmpeg.
 - [x] Terapkan batas konkurensi worker render (maks 1–2 job simultan).
 - [x] Buat scheduled cleanup job untuk menghapus file sementara di `storage/tmp/` dan `storage/raw-clips/` yang berusia > 24 jam.
 - [x] Tambahkan endpoint & UI cadangan: Upload file MP4 lokal (fallback jika IP server terkena blokir YouTube).
+
+### Fase 6: Post-MVP Polish & Multi-Cut (Rencana Bertahap)
+- [x] **Tahap 1: Fix Resolusi & Ketajaman Output**
+  - Di `clipper.js`: ganti format yt-dlp ke `bv*[height<=1440]+ba/b` dengan `--merge-output-format mp4` (native 810x1440 untuk crop 9:16, tajam tanpa beban decode 4K AV1), pastikan keyframe dan audio tetap sinkron.
+  - Di `renderer.js`: terapkan `-sws_flags lanczos` dan `-crf 18` dengan preset `veryfast`.
+- [x] **Tahap 2: Auto Polish (Hook Banner, Viral Subtitle, Layout 9:16)**
+  - Viral Subtitle: pemecah segmen transkrip 6–10 detik jadi 2–3 kata per baris proporsional berbasis durasi/karakter (`splitViralSubtitles`).
+  - Bundle font tebal (Montserrat) di `storage/fonts/` & `frontend/public/fonts/`, load via `@font-face` di frontend dan `fontsdir` di ASS filter FFmpeg.
+  - Layout 9:16: Full Crop vs Blur Background (stack video blur di belakang via FFmpeg split/boxblur/overlay).
+  - Hook Banner: judul hook otomatis di atas frame klip (preview editor & FFmpeg burn-in ASS).
+- [x] **Tahap 3: Multi-Cut Editor**
+  - Timeline multi-segmen: potong intro/iklan membosankan di tengah klip, gabung beberapa bagian klip jadi satu video utuh (`cuts` array di API config, multi-trim concat FFmpeg, dan UI timeline segmen di editor).
 
 ---
 
@@ -174,14 +186,19 @@ web-clipper/
 - `2026-11-21`: Renderer selalu men-scale output ke resolusi tetap (`1920x1080` untuk 16:9, `1080x1920` untuk 9:16) dan ASS memakai `PlayResX/Y` yang sama, supaya ukuran font/posisi subtitle konsisten dengan preview. Crop 9:16: `crop=w='trunc(ih*9/32)*2':x='trunc((iw-ih*9/16)*crop_x)'` lalu `scale=1080:1920`.
 - `2026-11-21`: `renderClip` dipisah jadi fungsi murni (`buildArgs`, `buildFilters`, `parseProgressPercent`, `trimRange`) + runner `spawn` agar testable tanpa FFmpeg. Progres dibaca dari `-progress pipe:1` (`out_time_ms`/`out_time`), di-throttle tiap 5% di consumer dan nilai mundur diabaikan. Output `storage/exports/clip-<clipId>-render-<jobId>.mp4`, `output_url` disimpan relatif terhadap root proyek. File ASS sementara di `storage/tmp/` dihapus setelah render.
 - `2026-11-21`: Konkurensi render dibatasi via `RENDER_CONCURRENCY` (default `1`, clamp `1..2`) + limiter internal (`createLimiter`). Job `render_clip` dijalankan di lane sendiri sehingga tidak memblokir `analyze_project`/`prepare_clip`; shutdown menunggu render aktif (`Promise.allSettled`) sebelum menutup DB.
+- `2026-11-21`: Fase 6 Tahap 1 (Fix Resolusi): yt-dlp diset `bv*[height<=1440]+ba/b` dengan `--merge-output-format mp4` di `clipper.js`. Di `renderer.js`: `-sws_flags lanczos` dan `-crf 18` untuk ketajaman scale 9:16 (1080x1920) optimal tanpa beban decode 4K AV1.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 5 (Final Render Engine & Hardening)
-- **Tugas Terakhir Selesai:** Fase 5 Item 4 — Upload file MP4 + subtitle lokal (fallback blokir YouTube): migrasi DB (`source_type`, `local_video_path`, `youtube_url` nullable), endpoint `POST /api/projects/upload` + test PASS 35/35, worker `clipLocalFile` potong langsung via FFmpeg tanpa yt-dlp, tab switcher dan upload form di `App.jsx`, build PASS 33 modules.
-- **Tugas Berikutnya:** Semua fase MVP (Fase 0 s/d Fase 5) sudah tuntas! Sistem siap digunakan.
+- **Fase Aktif:** Fase 6 (Post-MVP Polish & Multi-Cut) — Selesai Penuh (Tahap 1, 2, 3 Tuntas)
+- **Tugas Terakhir Selesai:** Fase 6 Tahap 3 — Multi-Cut Editor:
+  - Backend API: validasi array `cuts` (`[{start, end}]`) di `ClipController.php`.
+  - Worker FFmpeg: builder `parseCuts`, `buildMultiCutFilter` (trim + atrim + concat `v=1:a=1` + visual filter) di `renderer.js` + unit test PASS 69/69.
+  - Frontend Editor: panel Multi-Cut Timeline di `Editor.jsx` (tambah/hapus segmen, seek, kalkulasi total output, simpan konfigurasi).
+  - Semua test PASS: PHPUnit 35/35, Node unit test 69/69, Frontend Vite build PASS.
+- **Tugas Berikutnya:** Seluruh Fase 0 hingga Fase 6 sudah tuntas sempurna! Sistem web clipper siap digunakan untuk produksi dan eksperimen konten video pendek.
 - **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/ProjectController.php`, `backend/routes/api.php`, `backend/database/migrations/*add_local_upload_fields*`, `backend/tests/Feature/Api/ProjectUploadApiTest.php`, `worker/src/{consumer,clipper,db}.js`, `frontend/src/{App.jsx,api.js}`, `docs/{RUNNING.md,progress.md}`, `AGENTS.md`.
 - **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 35/35 (150 assertions), `npm test` (worker) PASS 65/65, `npm run build` PASS. Semua item to-do di Fase 0 s/d 5 sudah selesai.

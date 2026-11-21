@@ -218,6 +218,33 @@ export default function Editor({ clip, onBack }) {
     const c = clip.edit_config_json?.crop_x
     return typeof c === 'number' ? clamp(round3(c), 0, 1) : 0.5
   })
+  const [cuts, setCuts] = useState(() => {
+    const c = clip.edit_config_json?.cuts
+    if (Array.isArray(c) && c.length > 0) {
+      return c.map((cut) => ({
+        id: nextRowId(),
+        start: clamp(round1(Number(cut.start ?? 0)), 0, duration - MIN_GAP),
+        end: clamp(round1(Number(cut.end ?? duration)), MIN_GAP, duration),
+      }))
+    }
+    return [
+      {
+        id: nextRowId(),
+        start: trim.start,
+        end: trim.end,
+      },
+    ]
+  })
+  const [layoutMode, setLayoutMode] = useState(
+    clip.edit_config_json?.layout_mode === 'blur' ? 'blur' : 'crop',
+  )
+  const [hookBanner, setHookBanner] = useState(() => {
+    const h = clip.edit_config_json?.hook_banner || {}
+    return {
+      enabled: typeof h.enabled === 'boolean' ? h.enabled : true,
+      text: typeof h.text === 'string' ? h.text : (clip.title || ''),
+    }
+  })
   const [subtitle, setSubtitle] = useState(() => {
     const s = clip.edit_config_json?.subtitle || {}
     return {
@@ -476,8 +503,14 @@ export default function Editor({ clip, onBack }) {
         edit_config: {
           trim_start: round3(trim.start),
           trim_end: round3(trim.end),
+          cuts: cuts.map((c) => ({ start: round3(c.start), end: round3(c.end) })),
           aspect_ratio: aspectRatio,
           crop_x: round3(cropX),
+          layout_mode: layoutMode,
+          hook_banner: {
+            enabled: hookBanner.enabled,
+            text: hookBanner.text.trim(),
+          },
           subtitle: {
             enabled: subtitle.enabled,
             position: subtitle.position,
@@ -499,6 +532,16 @@ export default function Editor({ clip, onBack }) {
         }
         if (typeof saved.crop_x === 'number') {
           setCropX(clamp(round3(saved.crop_x), 0, 1))
+        }
+        if (saved.layout_mode === 'crop' || saved.layout_mode === 'blur') {
+          setLayoutMode(saved.layout_mode)
+        }
+        if (saved.hook_banner) {
+          const h = saved.hook_banner
+          setHookBanner((prev) => ({
+            enabled: typeof h.enabled === 'boolean' ? h.enabled : prev.enabled,
+            text: typeof h.text === 'string' ? h.text : prev.text,
+          }))
         }
         if (saved.subtitle) {
           const s = saved.subtitle
@@ -677,7 +720,7 @@ export default function Editor({ clip, onBack }) {
               }}
             />
 
-            {aspectRatio === '9:16' && geom && (
+            {aspectRatio === '9:16' && layoutMode === 'crop' && geom && (
               <>
                 <div
                   className="pointer-events-none absolute"
@@ -767,6 +810,40 @@ export default function Editor({ clip, onBack }) {
               </>
             )}
 
+            {hookBanner.enabled && hookBanner.text && geom && (
+              <div
+                className="pointer-events-none absolute overflow-hidden px-4"
+                style={{
+                  left: aspectRatio === '9:16' && layoutMode !== 'blur' ? geom.offsetX + cropX * geom.range : geom.offsetX,
+                  top: geom.offsetY + geom.dispH * 0.05,
+                  width: aspectRatio === '9:16' && layoutMode !== 'blur' ? geom.frameW : geom.dispW,
+                  zIndex: 20,
+                }}
+              >
+                <div className="flex w-full justify-center">
+                  <span
+                    style={{
+                      fontFamily: "'Montserrat', sans-serif",
+                      fontSize: clamp(
+                        36 * (geom.dispH / (aspectRatio === '9:16' ? 1920 : 1080)),
+                        12,
+                        geom.dispH * 0.15,
+                      ),
+                      color: '#FFFFFF',
+                      fontWeight: 900,
+                      lineHeight: 1.2,
+                      textAlign: 'center',
+                      maxWidth: '94%',
+                      whiteSpace: 'pre-wrap',
+                      textShadow: '0 0 4px #000, 0 2px 6px rgba(0,0,0,0.95)',
+                    }}
+                  >
+                    {hookBanner.text}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {activeSub && geom && (
               <div
                 className="pointer-events-none absolute overflow-hidden"
@@ -792,20 +869,20 @@ export default function Editor({ clip, onBack }) {
                 >
                   <span
                     style={{
-                      fontFamily: 'Arial, sans-serif',
+                      fontFamily: "'Montserrat', sans-serif",
                       fontSize: clamp(
                         subtitle.font_size * (geom.dispH / (aspectRatio === '9:16' ? 1920 : 1080)),
                         11,
                         geom.dispH * 0.3,
                       ),
                       color: subtitle.color,
-                      fontWeight: 700,
+                      fontWeight: 800,
                       lineHeight: 1.15,
                       textAlign: 'center',
                       maxWidth: '92%',
                       whiteSpace: 'pre-wrap',
                       overflowWrap: 'anywhere',
-                      textShadow: '0 0 2px #000, 0 1px 3px rgba(0,0,0,0.85)',
+                      textShadow: '0 0 3px #000, 0 2px 4px rgba(0,0,0,0.95)',
                     }}
                   >
                     {activeSub.text}
@@ -864,16 +941,88 @@ export default function Editor({ clip, onBack }) {
         </div>
 
         <aside className="rounded-xl border border-line bg-panel/60 p-4 sm:p-5">
-          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Potongan</p>
+          <div className="flex items-center justify-between">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Multi-Cut Timeline</p>
+            <button
+              type="button"
+              onClick={() => {
+                setCuts((prev) => [
+                  ...prev,
+                  {
+                    id: nextRowId(),
+                    start: clamp(round1(trim.end), 0, duration - MIN_GAP),
+                    end: duration,
+                  },
+                ]);
+                setSaveState('idle');
+              }}
+              className="rounded bg-panel-2 border border-line px-2 py-0.5 font-mono text-[10px] text-accent hover:border-accent"
+            >
+              + Tambah Segmen
+            </button>
+          </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <TimeField label="Awal" value={trim.start} />
-            <TimeField label="Akhir" value={trim.end} />
+          <div className="mt-3 space-y-2">
+            {cuts.map((c, idx) => (
+              <div key={c.id} className="flex items-center gap-2 rounded-md border border-line/60 bg-panel-2/50 p-2 text-xs">
+                <span className="font-mono text-[10px] text-muted w-4">#{idx + 1}</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max={duration}
+                  value={c.start}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setCuts((prev) => prev.map((item, i) => i === idx ? { ...item, start: val } : item));
+                    setSaveState('idle');
+                  }}
+                  className="w-16 rounded border border-line bg-void px-1.5 py-0.5 font-mono text-center text-ink text-xs focus:border-accent focus:outline-none"
+                />
+                <span className="text-faint">-</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max={duration}
+                  value={c.end}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setCuts((prev) => prev.map((item, i) => i === idx ? { ...item, end: val } : item));
+                    setSaveState('idle');
+                  }}
+                  className="w-16 rounded border border-line bg-void px-1.5 py-0.5 font-mono text-center text-ink text-xs focus:border-accent focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => seekTo(c.start)}
+                  className="rounded px-1.5 py-0.5 font-mono text-[10px] text-muted hover:text-ink"
+                  title="Loncat ke segmen"
+                >
+                  Seek
+                </button>
+                {cuts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCuts((prev) => prev.filter((_, i) => i !== idx));
+                      setSaveState('idle');
+                    }}
+                    className="ml-auto text-fail hover:text-fail/80 text-[10px] font-mono"
+                    title="Hapus segmen"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="mt-4 flex items-center justify-between text-xs">
-            <span className="text-faint">Durasi potongan</span>
-            <span className="font-mono text-ink">{formatTime(trim.end - trim.start)}</span>
+            <span className="text-faint">Total durasi output</span>
+            <span className="font-mono text-ink">
+              {formatTime(cuts.reduce((sum, c) => sum + Math.max(0, c.end - c.start), 0))}
+            </span>
           </div>
 
           <div className="mt-5 flex flex-col gap-2">
@@ -929,22 +1078,77 @@ export default function Editor({ clip, onBack }) {
 
             {aspectRatio === '9:16' ? (
               <>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="font-mono text-[11px] text-muted">Posisi {Math.round(cropX * 100)}%</span>
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="font-mono text-[11px] text-faint">Mode Layout:</span>
                   <button
                     type="button"
-                    onClick={resetCrop}
-                    className="rounded text-[11px] text-faint underline-offset-2 hover:text-muted hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    onClick={() => { setLayoutMode('crop'); setSaveState('idle'); }}
+                    className={`rounded px-2.5 py-1 text-xs font-mono transition ${layoutMode === 'crop' ? 'bg-accent text-void font-bold' : 'bg-panel-2 text-muted border border-line'}`}
                   >
-                    Atur ulang crop ke tengah
+                    Full Crop
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setLayoutMode('blur'); setSaveState('idle'); }}
+                    className={`rounded px-2.5 py-1 text-xs font-mono transition ${layoutMode === 'blur' ? 'bg-accent text-void font-bold' : 'bg-panel-2 text-muted border border-line'}`}
+                  >
+                    Blur Background
                   </button>
                 </div>
+
+                {layoutMode === 'crop' && (
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <span className="font-mono text-[11px] text-muted">Posisi {Math.round(cropX * 100)}%</span>
+                    <button
+                      type="button"
+                      onClick={resetCrop}
+                      className="rounded text-[11px] text-faint underline-offset-2 hover:text-muted hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Atur ulang crop ke tengah
+                    </button>
+                  </div>
+                )}
                 <p className="mt-2 text-xs leading-relaxed text-faint">
-                  Geser bingkai di video, atau fokuskan lalu pakai tombol panah.
+                  {layoutMode === 'crop'
+                    ? 'Geser bingkai di video, atau fokuskan lalu pakai tombol panah.'
+                    : 'Video diletakkan di tengah dengan background video yang diburamkan.'}
                 </p>
               </>
             ) : (
               <p className="mt-3 text-xs leading-relaxed text-faint">Mode lanskap memakai frame penuh.</p>
+            )}
+          </div>
+
+          <div className="mt-5 border-t border-line pt-5">
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Hook Banner</p>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={hookBanner.enabled}
+                  onChange={(e) => {
+                    setHookBanner((prev) => ({ ...prev, enabled: e.target.checked }));
+                    setSaveState('idle');
+                  }}
+                  className="h-3.5 w-3.5 rounded border border-line bg-void"
+                  style={{ accentColor: '#eaa33c' }}
+                />
+                Tampilkan
+              </label>
+            </div>
+            {hookBanner.enabled && (
+              <div className="mt-3">
+                <input
+                  type="text"
+                  value={hookBanner.text}
+                  onChange={(e) => {
+                    setHookBanner((prev) => ({ ...prev, text: e.target.value }));
+                    setSaveState('idle');
+                  }}
+                  placeholder="Judul hook di atas video..."
+                  className="w-full rounded-md border border-line bg-void px-3 py-1.5 font-sans text-xs text-ink placeholder-faint focus:border-accent focus:outline-none"
+                />
+              </div>
             )}
           </div>
 

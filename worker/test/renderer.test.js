@@ -31,14 +31,23 @@ test('buildFilters 9:16 memotong horizontal berdasarkan crop_x', () => {
   assert.ok(!filter.includes('subtitles='));
 });
 
+test('buildFilters 9:16 mode blur membuat stack background blur dan video overlay', () => {
+  const filter = buildFilters({ aspectRatio: '9:16', layoutMode: 'blur' });
+  assert.ok(filter.includes('split=2[bg][fg]'));
+  assert.ok(filter.includes('boxblur='));
+  assert.ok(filter.includes('overlay=(W-w)/2:(H-h)/2'));
+});
+
 test('buildFilters 16:9 letterbox dan escape path Windows untuk subtitle', () => {
   const filter = buildFilters({
     aspectRatio: '16:9',
     assPath: 'D:\\PORTO\\web\\storage\\tmp\\clip-5.ass',
+    fontsDir: 'D:\\PORTO\\web\\storage\\fonts',
   });
 
   assert.ok(filter.startsWith('scale=1920:1080:force_original_aspect_ratio=decrease'));
   assert.ok(filter.includes("subtitles=filename='D\\:/PORTO/web/storage/tmp/clip-5.ass'"));
+  assert.ok(filter.includes("fontsdir='D\\:/PORTO/web/storage/fonts'"));
   assert.equal(escapeFilterPath("C:\\a b\\x's.ass"), "C\\:/a b/x\\'s.ass");
 });
 
@@ -68,8 +77,33 @@ test('buildArgs memuat trim, filter, codec, dan progress pipe', () => {
   assert.deepEqual(args.slice(args.indexOf('-ss'), args.indexOf('-ss') + 2), ['-ss', '1.5']);
   assert.deepEqual(args.slice(args.indexOf('-t'), args.indexOf('-t') + 2), ['-t', '10']);
   assert.equal(args[args.indexOf('-c:v') + 1], 'libx264');
+  assert.equal(args[args.indexOf('-crf') + 1], '18');
   assert.equal(args[args.indexOf('-progress') + 1], 'pipe:1');
   assert.equal(args.at(-1), 'out.mp4');
+});
+
+test('buildArgs multi-cut membuat concat trim filter kompleks', () => {
+  const args = buildArgs({
+    rawClipPath: CLIP.raw_clip_path,
+    outputPath: 'out.mp4',
+    config: {
+      cuts: [
+        { start: 2, end: 6 },
+        { start: 10, end: 15 },
+      ],
+      aspectRatio: '9:16',
+      cropX: 0.5,
+    },
+    durationSec: 30,
+  });
+
+  assert.ok(args.includes('-filter_complex'));
+  const fc = args[args.indexOf('-filter_complex') + 1];
+  assert.ok(fc.includes('trim=start=2:end=6'));
+  assert.ok(fc.includes('trim=start=10:end=15'));
+  assert.ok(fc.includes('concat=n=2:v=1:a=1'));
+  assert.ok(args.includes('-map'));
+  assert.equal(args[args.indexOf('-map') + 1], '[outa]');
 });
 
 function fakeSpawn({ stdout = [], stderr = '', code = 0 }) {

@@ -36,6 +36,9 @@ test('download section parsial lalu re-encode via FFmpeg', async () => {
     '--download-sections', '*10.25-52.75', '--force-keyframes-at-cuts', '--ffmpeg-location',
   ]);
   assert.ok(calls[0].args.includes('--skip-download') === false);
+  assert.ok(calls[0].args.includes('bv*[height<=1440]+ba/b'));
+  assert.ok(calls[0].args.includes('--merge-output-format'));
+  assert.equal(calls[0].args[calls[0].args.indexOf('--merge-output-format') + 1], 'mp4');
 
   assert.equal(calls[1].command, process.env.FFMPEG_PATH || 'ffmpeg');
   assert.ok(calls[1].args.includes('libx264'));

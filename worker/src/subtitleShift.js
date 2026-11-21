@@ -3,21 +3,81 @@ function rounded(value) {
 }
 
 /**
- * Ambil subtitle yang beririsan dengan klip, clamp batasnya, lalu geser ke 00:00.
+ * Pecah segmen subtitle panjang menjadi potongan pendek viral (2-4 kata per baris)
+ * dengan distribusi durasi proporsional berdasarkan panjang karakter kata.
  */
-export function shiftSubtitles(segments, startSec, endSec) {
+export function splitViralSubtitles(subtitles, { maxWordsPerLine = 3 } = {}) {
+  if (!Array.isArray(subtitles)) throw new TypeError('subtitles harus array');
+  const maxWords = Math.max(1, Math.min(6, Number(maxWordsPerLine) || 3));
+  const result = [];
+
+  for (const item of subtitles) {
+    const rawText = String(item.text ?? '').trim();
+    const duration = item.end - item.start;
+
+    if (!rawText || duration <= 0) continue;
+
+    const words = rawText.split(/\s+/).filter(Boolean);
+    if (words.length <= maxWords) {
+      result.push({
+        start: rounded(item.start),
+        end: rounded(item.end),
+        text: rawText,
+      });
+      continue;
+    }
+
+    // Kelompokkan kata menjadi potongan 2-3 kata
+    const chunks = [];
+    for (let i = 0; i < words.length; i += maxWords) {
+      chunks.push(words.slice(i, i + maxWords).join(' '));
+    }
+
+    // Hitung bobot karakter tiap chunk
+    const totalChars = chunks.reduce((acc, c) => acc + c.length, 0);
+    let currentStart = item.start;
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const isLast = i === chunks.length - 1;
+      const chunkDur = isLast
+        ? item.end - currentStart
+        : duration * (chunk.length / totalChars);
+
+      const chunkEnd = isLast ? item.end : rounded(currentStart + chunkDur);
+
+      result.push({
+        start: rounded(currentStart),
+        end: rounded(chunkEnd),
+        text: chunk,
+      });
+
+      currentStart = chunkEnd;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Ambil subtitle yang beririsan dengan klip, clamp batasnya, lalu geser ke 00:00.
+ * Opsional: pecah ke potongan viral pendek jika viral: true.
+ */
+export function shiftSubtitles(segments, startSec, endSec, { viral = false, maxWords = 3 } = {}) {
   if (!Array.isArray(segments)) throw new TypeError('segments harus array');
   if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
     throw new RangeError('Rentang subtitle tidak valid');
   }
 
-  return segments
+  const shifted = segments
     .filter(({ start, end }) => end > startSec && start < endSec)
     .map(({ start, end, text }) => ({
       start: rounded(Math.max(start, startSec) - startSec),
       end: rounded(Math.min(end, endSec) - startSec),
       text,
     }));
+
+  return viral ? splitViralSubtitles(shifted, { maxWordsPerLine: maxWords }) : shifted;
 }
 
 function srtTime(seconds) {
@@ -36,7 +96,7 @@ export function toSrt(subtitles) {
   )).join('\n\n') + (subtitles.length ? '\n' : '');
 }
 
-function assTime(seconds) {
+export function assTime(seconds) {
   const centis = Math.round(seconds * 100);
   const hours = Math.floor(centis / 360_000);
   const minutes = Math.floor((centis % 360_000) / 6_000);

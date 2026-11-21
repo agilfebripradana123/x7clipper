@@ -54,6 +54,13 @@ class ClipController extends Controller
             'edit_config.trim_end' => ['sometimes', 'numeric', 'min:0'],
             'edit_config.aspect_ratio' => ['sometimes', Rule::in(['16:9', '9:16'])],
             'edit_config.crop_x' => ['sometimes', 'numeric', 'between:0,1'],
+            'edit_config.layout_mode' => ['sometimes', Rule::in(['crop', 'blur'])],
+            'edit_config.hook_banner' => ['sometimes', 'array'],
+            'edit_config.hook_banner.enabled' => ['sometimes', 'boolean'],
+            'edit_config.hook_banner.text' => ['sometimes', 'string', 'max:255'],
+            'edit_config.cuts' => ['sometimes', 'array'],
+            'edit_config.cuts.*.start' => ['required_with:edit_config.cuts', 'numeric', 'min:0'],
+            'edit_config.cuts.*.end' => ['required_with:edit_config.cuts', 'numeric', 'min:0'],
             'edit_config.subtitle' => ['sometimes', 'array'],
             'edit_config.subtitle.enabled' => ['sometimes', 'boolean'],
             'edit_config.subtitle.position' => ['sometimes', Rule::in(['top', 'middle', 'bottom'])],
@@ -76,6 +83,18 @@ class ClipController extends Controller
             $errors['edit_config.trim_end'] = 'trim_end harus lebih besar dari trim_start.';
         } elseif ($trimStart > $duration || $trimEnd > $duration + 0.001) {
             $errors['edit_config.trim_end'] = "Rentang trim melebihi durasi klip ({$duration} detik).";
+        }
+
+        if (isset($config['cuts']) && is_array($config['cuts'])) {
+            foreach ($config['cuts'] as $index => $cut) {
+                $cStart = (float) ($cut['start'] ?? 0);
+                $cEnd = (float) ($cut['end'] ?? 0);
+                if ($cEnd <= $cStart) {
+                    $errors["edit_config.cuts.{$index}.end"] = 'end potongan harus lebih besar dari start.';
+                } elseif ($cStart > $duration || $cEnd > $duration + 0.001) {
+                    $errors["edit_config.cuts.{$index}.end"] = "Potongan melebihi durasi klip ({$duration} detik).";
+                }
+            }
         }
 
         foreach ($validated['subtitles'] ?? [] as $index => $line) {
