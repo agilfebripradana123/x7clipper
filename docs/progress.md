@@ -230,6 +230,19 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm test` — **PASS 57/57**. Smoke riil `clip-11.mp4`: FFmpeg exit 0, `ffprobe` 1080x1920, 4.004s, subtitle burn-in tanpa error filter.
 - **Status:** Selesai (Fase 5 Item 1 tuntas). User harus restart consumer agar handler `render_clip` aktif.
 
+## [2026-11-21] Scaffold Frontend & Status Tracker (Fase 4 - Item 1)
+- **Tujuan:** Aplikasi React untuk input URL YouTube dan memantau pipeline sampai `ready`/`failed`.
+- **File ditambahkan/diubah:**
+  - `frontend/package.json` — React 19, Vite 6, Tailwind v4 (`@tailwindcss/vite`), font display/sans/mono.
+  - `frontend/vite.config.js` — plugin react + tailwind, proxy `/api` → `http://127.0.0.1:8000`.
+  - `frontend/src/api.js` — `createProject`, `getProject`, plus stub `patchClipConfig`, `prepareClip`, `renderClip`, `getRenderJob`; error membawa `err.status` dan `err.body`.
+  - `frontend/src/App.jsx` — form URL + validasi 422 server, panel pipeline, polling 2 dtk (berhenti di `ready`/`failed`), ringkasan `N klip siap`, reset.
+  - `frontend/src/components/StatusTracker.jsx` — stepper 4 tahap (antrean/ekstraksi/analisis/siap), state done/active/failed.
+  - `frontend/src/index.css` — token `@theme` (void/panel/ink/accent/ok/fail), animasi rise/stage-pulse, `prefers-reduced-motion`.
+- **Aksesibilitas:** label input, `aria-live` status, `role="alert"` error, focus-visible, submit via Enter.
+- **Hasil uji:** `npm run build` — **PASS** (31 modules, CSS 21.31 kB, JS 235.95 kB).
+- **Status:** Selesai (Fase 4 Item 1 tuntas). Placeholder "Lihat rekomendasi klip" diganti di Item 2.
+
 
 
 
