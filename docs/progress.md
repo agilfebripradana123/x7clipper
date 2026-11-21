@@ -255,6 +255,21 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm run build` — **PASS** (32 modules, CSS 23.50 kB, JS 241.23 kB).
 - **Status:** Selesai (Fase 4 Item 2 tuntas).
 
+## [2026-11-21] Web Editor: Player + Trim Slider (Fase 4 - Item 3)
+- **Tujuan:** Editor klip dengan pemutar video dan pemilihan rentang trim.
+- **File ditambahkan/diubah:**
+  - `frontend/src/components/Editor.jsx` — player `<video src="/api/clips/{id}/video">`, transport play/pause, timeline scrubber + dua handle trim, tombol simpan/reset.
+  - `frontend/src/components/ClipList.jsx` — tombol "Buka editor" aktif saat `prepare_status=ready`, prop `onOpenEditor`.
+  - `frontend/src/App.jsx` — state `editingClipId`, render `Editor` vs list, polling pause saat editor aktif.
+- **Kontrak:**
+  - Durasi clip = `end_sec - start_sec`; `trim_start/trim_end` relatif `00:00` klip, minimum gap 1 dtk.
+  - Handle trim: pointer capture (mouse/touch) + keyboard Arrow 0.1 dtk / Shift 1 dtk / Home/End, `role="slider"` + `aria-value*`.
+  - Playback loop kembali ke `trim_start` saat melewati `trim_end`; play di luar rentang otomatis seek.
+  - Simpan: `PATCH /api/clips/{id}/config` body `{ edit_config: { trim_start, trim_end } }` (partial merge, kunci lain tetap).
+  - Video error → overlay + muat ulang; error simpan tampil inline.
+- **Hasil uji:** `npm run build` — **PASS** (33 modules, CSS 27.77 kB, JS 252.31 kB).
+- **Status:** Selesai (Fase 4 Item 3 tuntas).
+
 
 
 

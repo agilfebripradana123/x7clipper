@@ -52,7 +52,7 @@ function PrepareBadge({ status }) {
   )
 }
 
-function ClipCard({ clip, error, busy, onPrepare }) {
+function ClipCard({ clip, error, busy, onPrepare, onOpenEditor }) {
   const preparing = clip.prepare_status === 'preparing' || busy
   const status = preparing ? 'preparing' : clip.prepare_status
   const hookLabel = HOOK[clip.hook_type] || clip.hook_type
@@ -99,12 +99,7 @@ function ClipCard({ clip, error, busy, onPrepare }) {
       <div className="mt-auto flex items-center justify-between gap-3 pt-4">
         <PrepareBadge status={status} />
         {status === 'ready' ? (
-          <button
-            type="button"
-            disabled
-            title="Editor tersedia di tahap berikutnya"
-            className={BTN_GHOST}
-          >
+          <button type="button" onClick={() => onOpenEditor(clip)} className={BTN_PRIMARY}>
             Buka editor
           </button>
         ) : status === 'failed' ? (
@@ -133,7 +128,7 @@ function ClipCard({ clip, error, busy, onPrepare }) {
   )
 }
 
-export default function ClipList({ project, onRefresh, onReset }) {
+export default function ClipList({ project, onRefresh, onReset, onOpenEditor }) {
   const clips = project.clips || []
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState({})
@@ -194,6 +189,7 @@ export default function ClipList({ project, onRefresh, onReset }) {
               error={errors[clip.id]}
               busy={!!busy[clip.id]}
               onPrepare={handlePrepare}
+              onOpenEditor={onOpenEditor}
             />
           ))}
         </ul>

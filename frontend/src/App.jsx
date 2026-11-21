@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createProject, getProject } from './api'
 import StatusTracker from './components/StatusTracker'
 import ClipList from './components/ClipList'
+import Editor from './components/Editor'
 
 const BTN =
   'inline-flex h-11 items-center justify-center rounded-lg px-5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40'
@@ -64,11 +65,13 @@ export default function App() {
   const [fieldError, setFieldError] = useState(null)
   const [fatalError, setFatalError] = useState(null)
   const [project, setProject] = useState(null)
+  const [editingClipId, setEditingClipId] = useState(null)
 
   const anyPreparing = project?.clips?.some((c) => c.prepare_status === 'preparing') ?? false
 
   useEffect(() => {
     if (!project) return
+    if (editingClipId != null) return
     if (!shouldKeepPolling(project)) return
 
     let cancelled = false
@@ -93,7 +96,7 @@ export default function App() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [project?.id, project?.status, anyPreparing])
+  }, [project?.id, project?.status, anyPreparing, editingClipId])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -124,7 +127,11 @@ export default function App() {
     setFieldError(null)
     setFatalError(null)
     setCreating(false)
+    setEditingClipId(null)
   }
+
+  const editingClip =
+    editingClipId != null ? project?.clips?.find((c) => c.id === editingClipId) ?? null : null
 
   const refresh = async () => {
     if (!project) return
@@ -166,6 +173,10 @@ export default function App() {
       </header>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-5 pb-16 pt-10 sm:px-8 sm:pt-16">
+        {editingClip ? (
+          <Editor key={editingClip.id} clip={editingClip} onBack={() => setEditingClipId(null)} />
+        ) : (
+          <>
         <div className="max-w-2xl">
           <p
             className="rise font-mono text-[11px] uppercase tracking-[0.18em] text-accent/90"
@@ -355,7 +366,14 @@ export default function App() {
         </div>
 
         {project?.status === 'ready' && (
-          <ClipList project={project} onRefresh={refresh} onReset={reset} />
+          <ClipList
+            project={project}
+            onRefresh={refresh}
+            onReset={reset}
+            onOpenEditor={(clip) => setEditingClipId(clip.id)}
+          />
+        )}
+          </>
         )}
       </main>
 
