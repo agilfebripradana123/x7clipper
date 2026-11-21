@@ -3,7 +3,11 @@
  * Worker consumer: BRPOP dari list Redis `x7:jobs` lalu jalankan pipeline.
  * Job analyze_project: metadata -> transkrip -> chunk -> 9router -> validasi -> DB.
  */
-import { pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 import { loadEnv } from './env.js';
 import { createDb } from './db.js';
 import { getVideoMetadata, downloadTranscript } from './youtube.js';
@@ -56,16 +60,44 @@ export async function analyzeProject(job, { db, getMetadata, getTranscript, sele
   }
 
   try {
-    const meta = await getMetadata(project.youtube_url);
-    await db.markExtracting(project.id, { title: meta.title, durationSec: meta.duration_sec });
+    let title = project.video_title;
+    let durationSec = 0;
+    let rawTranscriptContent = '';
 
-    const transcript = await getTranscript(project.youtube_url);
-    const { segments, segmentMap } = parseTranscript(transcript.content);
+    if (job.source_type === 'upload' || project.source_type === 'upload') {
+      const subPath = resolve(projectRoot, job.subtitle_path);
+      rawTranscriptContent = await readFile(subPath, 'utf8');
+
+      // Ambil durasi via ffprobe pada file video lokal
+      const vidPath = resolve(projectRoot, job.video_path || project.local_video_path);
+      const { execFile } = await import('node:child_process');
+      const { promisify } = await import('node:util');
+      const execFileAsync = promisify(execFile);
+      const ffprobe = process.env.FFPROBE_PATH || 'ffprobe';
+      const { stdout } = await execFileAsync(ffprobe, [
+        '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        vidPath,
+      ]);
+      durationSec = Math.round(Number.parseFloat(stdout.trim()) || 0);
+      await db.markExtracting(project.id, { title: title || 'Video Lokal', durationSec });
+    } else {
+      const meta = await getMetadata(project.youtube_url);
+      title = meta.title;
+      durationSec = meta.duration_sec;
+      await db.markExtracting(project.id, { title, durationSec });
+
+      const transcript = await getTranscript(project.youtube_url);
+      rawTranscriptContent = transcript.content;
+    }
+
+    const { segments, segmentMap } = parseTranscript(rawTranscriptContent);
     if (segments.length === 0) throw new Error('Transkrip kosong setelah parsing');
     await db.saveTranscript(project.id, segmentMap);
 
     await db.markAnalyzing(project.id);
-    const chunks = chunkSegments(segments, meta.duration_sec);
+    const chunks = chunkSegments(segments, durationSec);
     const rawClips = [];
     let failedChunks = 0;
     let lastChunkError;
@@ -84,7 +116,7 @@ export async function analyzeProject(job, { db, getMetadata, getTranscript, sele
       throw new Error(`Semua ${chunks.length} chunk gagal dianalisis: ${lastChunkError.message}`);
     }
 
-    const clips = deduplicateClips(validateClips(rawClips, segmentMap, meta.duration_sec));
+    const clips = deduplicateClips(validateClips(rawClips, segmentMap, durationSec));
     await db.saveClipsAndReady(project.id, clips);
     return { clips: clips.length, chunks: chunks.length };
   } catch (error) {
@@ -103,7 +135,7 @@ export async function analyzeProject(job, { db, getMetadata, getTranscript, sele
  * Job prepare_clip: potong segmen via yt-dlp + FFmpeg, geser subtitle ke 00:00,
  * simpan raw_clip_path + subtitle_json. Idempoten, tidak pernah throw keluar.
  */
-export async function prepareClip(job, { db, clipSegment, shiftSubtitles, fileExists, log = () => {} }) {
+export async function prepareClip(job, { db, clipSegment, clipLocalFile, shiftSubtitles, fileExists, log = () => {} }) {
   if (!job?.clip_id) return { skipped: true };
 
   const clip = await db.getClip(job.clip_id);
@@ -128,9 +160,21 @@ export async function prepareClip(job, { db, clipSegment, shiftSubtitles, fileEx
     await db.markClipPreparing(clip.id);
     const segmentMap = await db.getProjectTranscript(clip.project_id);
     const subtitles = shiftSubtitles(Object.values(segmentMap ?? {}), clip.start_sec, clip.end_sec);
-    const { clipPath } = await clipSegment(project.youtube_url, clip.start_sec, clip.end_sec, {
-      clipId: `clip-${clip.id}`,
-    });
+
+    // Upload lokal: potong langsung dari file video lokal via FFmpeg, tanpa yt-dlp.
+    const isLocalUpload = project.source_type === 'upload' && project.local_video_path;
+    let clipPath;
+    if (isLocalUpload) {
+      const videoAbsPath = resolve(projectRoot, project.local_video_path);
+      ({ clipPath } = await clipLocalFile(videoAbsPath, clip.start_sec, clip.end_sec, {
+        clipId: `clip-${clip.id}`,
+      }));
+    } else {
+      ({ clipPath } = await clipSegment(project.youtube_url, clip.start_sec, clip.end_sec, {
+        clipId: `clip-${clip.id}`,
+      }));
+    }
+
     await db.markClipReady(clip.id, { rawClipPath: clipPath, subtitles });
     return { clipId: clip.id, clipPath, subtitles: subtitles.length };
   } catch (error) {
@@ -212,7 +256,7 @@ async function main() {
   const log = (message) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${message}`);
   const requeue = (job) => redis.lpush(JOB_LIST, JSON.stringify(job));
 
-  const [{ clipSegment }, { shiftSubtitles }, { renderClip }, { access }] = await Promise.all([
+  const [{ clipSegment, clipLocalFile }, { shiftSubtitles }, { renderClip }, { access }] = await Promise.all([
     import('./clipper.js'),
     import('./subtitleShift.js'),
     import('./renderer.js'),
@@ -230,6 +274,7 @@ async function main() {
     getTranscript: downloadTranscript,
     selectClips: selectClipsFromChunk,
     clipSegment,
+    clipLocalFile,
     shiftSubtitles,
     render: renderClip,
     fileExists,

@@ -11,7 +11,9 @@ class Project extends Model
     use HasFactory;
 
     protected $fillable = [
+        'source_type',
         'youtube_url',
+        'local_video_path',
         'video_title',
         'duration_sec',
         'transcript_segments_json',

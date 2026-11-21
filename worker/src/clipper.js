@@ -32,6 +32,50 @@ function bin(name, fallback) {
 }
 
 /**
+ * Potong file video lokal langsung menggunakan FFmpeg tanpa yt-dlp.
+ */
+export async function clipLocalFile(inputPath, startSec, endSec, {
+  clipId = randomUUID(),
+  outputDir = defaultOutputDir,
+  ffmpeg = bin('FFMPEG_PATH', 'ffmpeg'),
+  run = execFileAsync,
+  stat = fsStat,
+  makeDir = mkdir,
+} = {}) {
+  if (typeof startSec !== 'number' || typeof endSec !== 'number') {
+    throw new TypeError('startSec dan endSec harus number');
+  }
+  if (startSec < 0 || endSec <= startSec) {
+    throw new RangeError(`Rentang clip tidak valid: startSec=${startSec}, endSec=${endSec}`);
+  }
+
+  await makeDir(outputDir, { recursive: true });
+  const finalFile = resolve(outputDir, `${clipId}.mp4`);
+  const durationSec = Number((endSec - startSec).toFixed(2));
+
+  const ffmpegArgs = [
+    '-y',
+    '-ss', String(startSec),
+    '-t', String(durationSec),
+    '-i', inputPath,
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-c:a', 'aac',
+    '-movflags', '+faststart',
+    finalFile,
+  ];
+
+  await run(ffmpeg, ffmpegArgs, { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
+  const fileInfo = await stat(finalFile);
+
+  return {
+    clipPath: finalFile,
+    durationSec,
+    sizeBytes: fileInfo.size,
+  };
+}
+
+/**
  * Download potongan segmen parsial via yt-dlp --download-sections
  * lalu rapikan keyframe via FFmpeg (libx264 + aac + movflags +faststart)
  * agar browser langsung memutar tanpa freeze.

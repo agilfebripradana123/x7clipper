@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\RenderJobController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/projects', [ProjectController::class, 'store']);
+Route::post('/projects/upload', [ProjectController::class, 'upload']);
 Route::get('/projects/{project}', [ProjectController::class, 'show']);
 Route::patch('/clips/{clip}/config', [ClipController::class, 'updateConfig']);
 Route::post('/clips/{clip}/prepare', [ClipController::class, 'prepare']);

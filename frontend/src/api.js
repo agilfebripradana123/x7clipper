@@ -32,6 +32,35 @@ export async function createProject(youtubeUrl) {
   return res.data
 }
 
+export async function uploadProject({ videoFile, subtitleFile }) {
+  const formData = new FormData()
+  if (videoFile) formData.append('video', videoFile)
+  if (subtitleFile) formData.append('subtitle', subtitleFile)
+
+  const res = await fetch(BASE + '/projects/upload', {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    body: formData,
+  })
+
+  const text = await res.text()
+  let body = null
+  try {
+    body = text ? JSON.parse(text) : null
+  } catch {
+    body = null
+  }
+
+  if (!res.ok) {
+    const err = new Error(body?.message || `Unggah gagal (${res.status})`)
+    err.status = res.status
+    err.body = body
+    throw err
+  }
+
+  return body.data
+}
+
 export async function getProject(id) {
   const res = await request(`/projects/${id}`)
   return res.data

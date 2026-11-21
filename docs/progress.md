@@ -338,6 +338,24 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm test` — **PASS 65/65**.
 - **Status:** Selesai (Fase 5 Item 3 tuntas).
 
+## [2026-11-21] Upload Video Lokal MP4 & Subtitle Fallback (Fase 5 - Item 4)
+- **Tujuan:** Fallback cadangan jika IP server dibatasi atau diblokir oleh YouTube.
+- **File ditambahkan/diubah:**
+  - `backend/database/migrations/2026_11_21_040356_add_local_upload_fields_to_projects_table.php` — `youtube_url` dibuat nullable, penambahan kolom `source_type` ('youtube'|'upload') dan `local_video_path`.
+  - `backend/app/Models/Project.php` — fillable `source_type`, `local_video_path`.
+  - `backend/app/Http/Controllers/Api/ProjectController.php` — endpoint `upload()` menerima multipart `video` (mp4/mov/m4v max 500MB) dan `subtitle` (vtt/srt max 10MB), simpan ke `storage/uploads/`, enqueue job `analyze_project` dengan parameter upload.
+  - `backend/tests/Feature/Api/ProjectUploadApiTest.php` — test validasi required dan alur upload berhasil + enqueue Redis.
+  - `worker/src/clipper.js` — fungsi `clipLocalFile()`: pemotongan video parsial langsung dari file MP4 lokal via FFmpeg (tanpa `yt-dlp`).
+  - `worker/src/db.js` — query project menyertakan `source_type`, `local_video_path`, `video_title`.
+  - `worker/src/consumer.js` — dukungan `source_type === 'upload'` pada `analyzeProject` (baca subtitle langsung dari disk + ambil durasi via `ffprobe`) dan `prepareClip` (panggil `clipLocalFile`).
+  - `frontend/src/api.js` — fungsi `uploadProject({ videoFile, subtitleFile })`.
+  - `frontend/src/App.jsx` — tab selector (Tautan YouTube vs Unggah Video Lokal), form upload file MP4 dan subtitle VTT/SRT dengan progress spinner dan error feedback, handing over langsung ke status tracker.
+- **Hasil uji:**
+  - `php artisan test` — **PASS 35/35 (150 assertions)**.
+  - `npm test` (worker) — **PASS 65/65**.
+  - `npm run build` (frontend) — **PASS** (33 modules, CSS 32.10 kB / JS 279.13 kB).
+- **Status:** Selesai (Fase 5 tuntas & seluruh MVP Fase 0 s/d 5 selesai!).
+
 
 
 

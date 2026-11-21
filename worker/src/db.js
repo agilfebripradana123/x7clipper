@@ -77,7 +77,7 @@ export function createDb({ config = dbConfigFromEnv(), createPool } = {}) {
 
   return {
     async getProject(id) {
-      const rows = await query('SELECT id, youtube_url, status FROM projects WHERE id = ?', [id]);
+      const rows = await query('SELECT id, source_type, youtube_url, local_video_path, video_title, status FROM projects WHERE id = ?', [id]);
       return rows[0] ?? null;
     },
 

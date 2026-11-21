@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { createProject, getProject } from './api'
+import { useEffect, useRef, useState } from 'react'
+import { createProject, getProject, uploadProject } from './api'
 import StatusTracker from './components/StatusTracker'
 import ClipList from './components/ClipList'
 import Editor from './components/Editor'
@@ -50,6 +50,47 @@ function LinkIcon() {
   )
 }
 
+function UploadIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden="true">
+      <path
+        d="M3 13.5v2a1.5 1.5 0 001.5 1.5h11a1.5 1.5 0 001.5-1.5v-2M10 3.5v9M6.5 7L10 3.5 13.5 7"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function VideoFileIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 3.5h7a1 1 0 011 1v7a1 1 0 01-1 1h-7a1 1 0 01-1-1v-7a1 1 0 011-1zM10.5 6.5l3-2v7l-3-2v-3z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function SubtitleFileIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 3.5h11a1 1 0 011 1v8a1 1 0 01-1 1h-11a1 1 0 01-1-1v-8a1 1 0 011-1zM4.5 9.5h7M4.5 6.5h4"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function ErrorBox({ title, message }) {
   return (
     <div className="rounded-lg border border-fail/30 bg-fail/5 p-4">
@@ -60,12 +101,18 @@ function ErrorBox({ title, message }) {
 }
 
 export default function App() {
+  const [sourceMode, setSourceMode] = useState('youtube') // 'youtube' | 'upload'
   const [url, setUrl] = useState('')
+  const [videoFile, setVideoFile] = useState(null)
+  const [subtitleFile, setSubtitleFile] = useState(null)
   const [creating, setCreating] = useState(false)
   const [fieldError, setFieldError] = useState(null)
+  const [uploadErrors, setUploadErrors] = useState({})
   const [fatalError, setFatalError] = useState(null)
   const [project, setProject] = useState(null)
   const [editingClipId, setEditingClipId] = useState(null)
+  const videoInputRef = useRef(null)
+  const subtitleInputRef = useRef(null)
 
   const anyPreparing = project?.clips?.some((c) => c.prepare_status === 'preparing') ?? false
 
@@ -121,10 +168,50 @@ export default function App() {
     }
   }
 
+  const handleUploadSubmit = async (e) => {
+    e.preventDefault()
+    if (creating) return
+
+    const errs = {}
+    if (!videoFile) errs.video = 'Pilih berkas video (MP4, MOV, atau M4V).'
+    if (!subtitleFile) errs.subtitle = 'Pilih berkas subtitle (VTT atau SRT).'
+
+    if (Object.keys(errs).length > 0) {
+      setUploadErrors(errs)
+      return
+    }
+
+    setUploadErrors({})
+    setFatalError(null)
+    setCreating(true)
+    try {
+      const data = await uploadProject({ videoFile, subtitleFile })
+      setProject(data)
+    } catch (err) {
+      const serverErrs = err?.body?.errors || {}
+      if (Object.keys(serverErrs).length > 0) {
+        setUploadErrors({
+          video: serverErrs.video?.[0],
+          subtitle: serverErrs.subtitle?.[0],
+          general: err?.body?.message,
+        })
+      } else {
+        setUploadErrors({ general: err?.body?.message || err?.message || 'Gagal mengunggah berkas.' })
+      }
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const reset = () => {
     setProject(null)
     setUrl('')
+    setVideoFile(null)
+    setSubtitleFile(null)
+    if (videoInputRef.current) videoInputRef.current.value = ''
+    if (subtitleInputRef.current) subtitleInputRef.current.value = ''
     setFieldError(null)
+    setUploadErrors({})
     setFatalError(null)
     setCreating(false)
     setEditingClipId(null)
@@ -194,79 +281,300 @@ export default function App() {
             className="rise mt-5 max-w-xl text-[15px] leading-relaxed text-muted sm:text-base"
             style={{ animationDelay: '0.2s' }}
           >
-            Tempel tautan YouTube. Sistem mengambil transkrip, memilih momen terbaik, lalu menyiapkan klip untuk
-            dirapikan.
+            Tempel tautan YouTube atau unggah berkas video + subtitle lokal. Sistem memilih momen terbaik dan menyiapkan klip untuk dirapikan.
           </p>
         </div>
 
         <div className="mt-9 max-w-3xl">
           {!project ? (
-            <form onSubmit={handleSubmit} noValidate className="rise" style={{ animationDelay: '0.28s' }}>
-              <div className="relative overflow-hidden rounded-2xl border border-line bg-panel/70 p-5 backdrop-blur-sm sm:p-7">
-                <div
-                  className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-transparent"
-                  aria-hidden="true"
-                />
-                <label
-                  htmlFor="youtube-url"
-                  className="block font-mono text-[11px] uppercase tracking-[0.16em] text-muted"
+            <div className="rise" style={{ animationDelay: '0.28s' }}>
+              {/* Tab Selector */}
+              <div role="tablist" aria-label="Sumber masukan video" className="mb-3 flex items-center gap-1">
+                <button
+                  type="button"
+                  role="tab"
+                  id="tab-youtube"
+                  aria-selected={sourceMode === 'youtube'}
+                  aria-controls="panel-youtube"
+                  onClick={() => {
+                    setSourceMode('youtube')
+                    setFieldError(null)
+                    setUploadErrors({})
+                  }}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 font-mono text-xs transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                    sourceMode === 'youtube'
+                      ? 'border border-accent/40 bg-accent/10 font-medium text-accent'
+                      : 'border border-transparent text-muted hover:border-line hover:bg-panel-2 hover:text-ink'
+                  }`}
                 >
-                  Tautan video YouTube
-                </label>
-
-                <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
-                  <div className="relative flex-1">
-                    <span
-                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-faint"
-                      aria-hidden="true"
-                    >
-                      <LinkIcon />
-                    </span>
-                    <input
-                      id="youtube-url"
-                      type="url"
-                      inputMode="url"
-                      autoComplete="off"
-                      spellCheck="false"
-                      value={url}
-                      onChange={(e) => {
-                        setUrl(e.target.value)
-                        if (fieldError) setFieldError(null)
-                      }}
-                      placeholder="https://youtu.be/…"
-                      aria-invalid={fieldError ? 'true' : undefined}
-                      aria-describedby={fieldError ? 'url-error' : 'url-hint'}
-                      className={`h-12 w-full rounded-lg border bg-void/60 pl-10 pr-3 text-[15px] text-ink outline-none transition placeholder:text-faint focus:border-accent ${
-                        fieldError ? 'border-fail' : 'border-line'
-                      }`}
-                    />
-                  </div>
-                  <button type="submit" disabled={creating} className={`${BTN_PRIMARY} w-full sm:w-auto`}>
-                    {creating ? (
-                      <>
-                        <span
-                          className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-void/40 border-t-void motion-reduce:animate-none"
-                          aria-hidden="true"
-                        />
-                        Memulai…
-                      </>
-                    ) : (
-                      'Mulai analisis'
-                    )}
-                  </button>
-                </div>
-
-                {fieldError ? (
-                  <p id="url-error" role="alert" className="mt-2.5 text-sm text-fail">
-                    {fieldError}
-                  </p>
-                ) : (
-                  <p id="url-hint" className="mt-2.5 text-xs text-faint">
-                    Tempel tautan lalu tekan Enter.
-                  </p>
-                )}
+                  <LinkIcon />
+                  Tautan YouTube
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="tab-upload"
+                  aria-selected={sourceMode === 'upload'}
+                  aria-controls="panel-upload"
+                  onClick={() => {
+                    setSourceMode('upload')
+                    setFieldError(null)
+                    setUploadErrors({})
+                  }}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 font-mono text-xs transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                    sourceMode === 'upload'
+                      ? 'border border-accent/40 bg-accent/10 font-medium text-accent'
+                      : 'border border-transparent text-muted hover:border-line hover:bg-panel-2 hover:text-ink'
+                  }`}
+                >
+                  <UploadIcon />
+                  Unggah Video Lokal
+                </button>
               </div>
-            </form>
+
+              {sourceMode === 'youtube' ? (
+                <form
+                  id="panel-youtube"
+                  role="tabpanel"
+                  aria-labelledby="tab-youtube"
+                  onSubmit={handleSubmit}
+                  noValidate
+                >
+                  <div className="relative overflow-hidden rounded-2xl border border-line bg-panel/70 p-5 backdrop-blur-sm sm:p-7">
+                    <div
+                      className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-transparent"
+                      aria-hidden="true"
+                    />
+                    <label
+                      htmlFor="youtube-url"
+                      className="block font-mono text-[11px] uppercase tracking-[0.16em] text-muted"
+                    >
+                      Tautan video YouTube
+                    </label>
+
+                    <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
+                      <div className="relative flex-1">
+                        <span
+                          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-faint"
+                          aria-hidden="true"
+                        >
+                          <LinkIcon />
+                        </span>
+                        <input
+                          id="youtube-url"
+                          type="url"
+                          inputMode="url"
+                          autoComplete="off"
+                          spellCheck="false"
+                          value={url}
+                          onChange={(e) => {
+                            setUrl(e.target.value)
+                            if (fieldError) setFieldError(null)
+                          }}
+                          placeholder="https://youtu.be/…"
+                          aria-invalid={fieldError ? 'true' : undefined}
+                          aria-describedby={fieldError ? 'url-error' : 'url-hint'}
+                          className={`h-12 w-full rounded-lg border bg-void/60 pl-10 pr-3 text-[15px] text-ink outline-none transition placeholder:text-faint focus:border-accent ${
+                            fieldError ? 'border-fail' : 'border-line'
+                          }`}
+                        />
+                      </div>
+                      <button type="submit" disabled={creating} className={`${BTN_PRIMARY} w-full sm:w-auto`}>
+                        {creating ? (
+                          <>
+                            <span
+                              className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-void/40 border-t-void motion-reduce:animate-none"
+                              aria-hidden="true"
+                            />
+                            Memulai…
+                          </>
+                        ) : (
+                          'Mulai analisis'
+                        )}
+                      </button>
+                    </div>
+
+                    {fieldError ? (
+                      <p id="url-error" role="alert" className="mt-2.5 text-sm text-fail">
+                        {fieldError}
+                      </p>
+                    ) : (
+                      <p id="url-hint" className="mt-2.5 text-xs text-faint">
+                        Tempel tautan lalu tekan Enter.
+                      </p>
+                    )}
+                  </div>
+                </form>
+              ) : (
+                <form
+                  id="panel-upload"
+                  role="tabpanel"
+                  aria-labelledby="tab-upload"
+                  onSubmit={handleUploadSubmit}
+                  noValidate
+                >
+                  <div className="relative overflow-hidden rounded-2xl border border-line bg-panel/70 p-5 backdrop-blur-sm sm:p-7">
+                    <div
+                      className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-transparent"
+                      aria-hidden="true"
+                    />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {/* Video input */}
+                      <div>
+                        <label
+                          htmlFor="video-file-input"
+                          className="block font-mono text-[11px] uppercase tracking-[0.16em] text-muted"
+                        >
+                          Berkas Video <span className="text-accent">*</span>
+                        </label>
+                        <p className="mt-1 text-xs text-faint">Format MP4, MOV, atau M4V</p>
+
+                        <input
+                          ref={videoInputRef}
+                          id="video-file-input"
+                          type="file"
+                          accept=".mp4,.mov,.m4v"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] || null
+                            setVideoFile(f)
+                            if (uploadErrors.video) {
+                              setUploadErrors((prev) => {
+                                const next = { ...prev }
+                                delete next.video
+                                return next
+                              })
+                            }
+                          }}
+                          className="sr-only"
+                        />
+
+                        <div
+                          onClick={() => videoInputRef.current?.click()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              videoInputRef.current?.click()
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          aria-label={videoFile ? `Berkas video dipilih: ${videoFile.name}` : 'Pilih berkas video'}
+                          className={`mt-2.5 flex min-h-[96px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-3 text-center transition hover:border-line-2 hover:bg-panel-2/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                            uploadErrors.video ? 'border-fail bg-fail/5' : videoFile ? 'border-accent/60 bg-accent/5' : 'border-line bg-void/40'
+                          }`}
+                        >
+                          <span className={`grid h-8 w-8 place-items-center rounded-lg border ${videoFile ? 'border-accent/40 bg-accent/15 text-accent' : 'border-line bg-panel text-faint'}`}>
+                            <VideoFileIcon />
+                          </span>
+                          {videoFile ? (
+                            <span className="mt-2 max-w-[90%] truncate font-mono text-xs font-medium text-ink" title={videoFile.name}>
+                              {videoFile.name}
+                            </span>
+                          ) : (
+                            <span className="mt-2 text-xs text-muted">Klik untuk memilih video</span>
+                          )}
+                        </div>
+
+                        {uploadErrors.video && (
+                          <p role="alert" className="mt-2 text-xs text-fail">
+                            {uploadErrors.video}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Subtitle input */}
+                      <div>
+                        <label
+                          htmlFor="subtitle-file-input"
+                          className="block font-mono text-[11px] uppercase tracking-[0.16em] text-muted"
+                        >
+                          Berkas Subtitle <span className="text-accent">*</span>
+                        </label>
+                        <p className="mt-1 text-xs text-faint">Format VTT atau SRT</p>
+
+                        <input
+                          ref={subtitleInputRef}
+                          id="subtitle-file-input"
+                          type="file"
+                          accept=".vtt,.srt"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] || null
+                            setSubtitleFile(f)
+                            if (uploadErrors.subtitle) {
+                              setUploadErrors((prev) => {
+                                const next = { ...prev }
+                                delete next.subtitle
+                                return next
+                              })
+                            }
+                          }}
+                          className="sr-only"
+                        />
+
+                        <div
+                          onClick={() => subtitleInputRef.current?.click()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              subtitleInputRef.current?.click()
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          aria-label={subtitleFile ? `Berkas subtitle dipilih: ${subtitleFile.name}` : 'Pilih berkas subtitle'}
+                          className={`mt-2.5 flex min-h-[96px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-3 text-center transition hover:border-line-2 hover:bg-panel-2/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                            uploadErrors.subtitle ? 'border-fail bg-fail/5' : subtitleFile ? 'border-accent/60 bg-accent/5' : 'border-line bg-void/40'
+                          }`}
+                        >
+                          <span className={`grid h-8 w-8 place-items-center rounded-lg border ${subtitleFile ? 'border-accent/40 bg-accent/15 text-accent' : 'border-line bg-panel text-faint'}`}>
+                            <SubtitleFileIcon />
+                          </span>
+                          {subtitleFile ? (
+                            <span className="mt-2 max-w-[90%] truncate font-mono text-xs font-medium text-ink" title={subtitleFile.name}>
+                              {subtitleFile.name}
+                            </span>
+                          ) : (
+                            <span className="mt-2 text-xs text-muted">Klik untuk memilih subtitle</span>
+                          )}
+                        </div>
+
+                        {uploadErrors.subtitle && (
+                          <p role="alert" className="mt-2 text-xs text-fail">
+                            {uploadErrors.subtitle}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {uploadErrors.general && (
+                      <p role="alert" className="mt-4 text-xs text-fail">
+                        {uploadErrors.general}
+                      </p>
+                    )}
+
+                    <div className="mt-5 flex flex-col items-center justify-between gap-3 border-t border-line pt-4 sm:flex-row">
+                      <p className="text-xs text-faint">
+                        Fallback saat IP server terblokir oleh YouTube.
+                      </p>
+                      <button type="submit" disabled={creating} className={`${BTN_PRIMARY} w-full sm:w-auto`}>
+                        {creating ? (
+                          <>
+                            <span
+                              className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-void/40 border-t-void motion-reduce:animate-none"
+                              aria-hidden="true"
+                            />
+                            Mengunggah…
+                          </>
+                        ) : (
+                          'Mulai analisis berkas'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+            </div>
           ) : (
             <section aria-busy={isActive} className="rise">
               <div className="relative overflow-hidden rounded-2xl border border-line bg-panel/70 p-5 backdrop-blur-sm sm:p-7">
@@ -286,14 +594,21 @@ export default function App() {
                     </h2>
                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
                       {duration && <span className="font-mono">{duration}</span>}
-                      <a
-                        href={project.youtube_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="max-w-full truncate font-mono text-faint underline-offset-2 hover:text-muted hover:underline"
-                      >
-                        {project.youtube_url}
-                      </a>
+                      {project.source_type === 'upload' ? (
+                        <span className="inline-flex items-center gap-1.5 font-mono text-faint">
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent/60" aria-hidden="true" />
+                          Berkas lokal
+                        </span>
+                      ) : (
+                        <a
+                          href={project.youtube_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="max-w-full truncate font-mono text-faint underline-offset-2 hover:text-muted hover:underline"
+                        >
+                          {project.youtube_url}
+                        </a>
+                      )}
                     </div>
                   </div>
 

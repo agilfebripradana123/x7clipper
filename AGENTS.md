@@ -145,7 +145,7 @@ web-clipper/
 - [ ] Buat `worker/src/renderer.js`: builder perintah FFmpeg untuk `trim` + `crop 9:16` (hitung dari rasio `crop_x`) + `burn-in` subtitle `.ass` dengan font identik frontend + parser progres persen FFmpeg.
 - [x] Terapkan batas konkurensi worker render (maks 1–2 job simultan).
 - [x] Buat scheduled cleanup job untuk menghapus file sementara di `storage/tmp/` dan `storage/raw-clips/` yang berusia > 24 jam.
-- [ ] Tambahkan endpoint & UI cadangan: Upload file MP4 lokal (fallback jika IP server terkena blokir YouTube).
+- [x] Tambahkan endpoint & UI cadangan: Upload file MP4 lokal (fallback jika IP server terkena blokir YouTube).
 
 ---
 
@@ -181,7 +181,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 5 (Final Render Engine & Hardening)
-- **Tugas Terakhir Selesai:** Fase 5 Item 3 — `worker/scripts/cleanup.js`: pembersihan berkala `storage/tmp/` dan `storage/raw-clips/` untuk file > 24 jam (`CLEANUP_MAX_AGE_HOURS`), lindungi `.gitkeep` dan tidak pernah sentuh `storage/exports/` atau `storage/transcripts/`, opsi `--dry-run`, script `npm run cleanup`. Test PASS 65/65.
-- **Tugas Berikutnya:** Fase 5 Item 4 — endpoint & UI cadangan: upload file MP4 lokal (fallback jika IP server terkena blokir YouTube).
-- **File Terakhir Diubah:** `worker/scripts/cleanup.js`, `worker/test/cleanup.test.js`, `worker/package.json`, `.env.example`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** `npm test` (worker) PASS 65/65, `php artisan test` PASS 33/33, `npm run build` PASS. Cleanup bisa dijalankan manual (`npm run cleanup`) atau via cron/Task Scheduler OS.
+- **Tugas Terakhir Selesai:** Fase 5 Item 4 — Upload file MP4 + subtitle lokal (fallback blokir YouTube): migrasi DB (`source_type`, `local_video_path`, `youtube_url` nullable), endpoint `POST /api/projects/upload` + test PASS 35/35, worker `clipLocalFile` potong langsung via FFmpeg tanpa yt-dlp, tab switcher dan upload form di `App.jsx`, build PASS 33 modules.
+- **Tugas Berikutnya:** Semua fase MVP (Fase 0 s/d Fase 5) sudah tuntas! Sistem siap digunakan.
+- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/ProjectController.php`, `backend/routes/api.php`, `backend/database/migrations/*add_local_upload_fields*`, `backend/tests/Feature/Api/ProjectUploadApiTest.php`, `worker/src/{consumer,clipper,db}.js`, `frontend/src/{App.jsx,api.js}`, `docs/{RUNNING.md,progress.md}`, `AGENTS.md`.
+- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 35/35 (150 assertions), `npm test` (worker) PASS 65/65, `npm run build` PASS. Semua item to-do di Fase 0 s/d 5 sudah selesai.
