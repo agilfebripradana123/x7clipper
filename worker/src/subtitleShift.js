@@ -3,6 +3,46 @@ function rounded(value) {
 }
 
 /**
+ * Deteksi jeda hening (gap antar cue transkrip > minGapSec, default 1.2s)
+ * lalu bangun array segmen aktif (cuts) dengan buffer pengaman.
+ */
+export function detectJumpCuts(subtitles, clipDuration, { minGapSec = 1.2, bufferSec = 0.15 } = {}) {
+  if (!Array.isArray(subtitles) || subtitles.length === 0) {
+    return [{ start: 0, end: rounded(clipDuration) }];
+  }
+
+  const sorted = [...subtitles]
+    .map((s) => ({ start: Math.max(0, s.start), end: Math.min(clipDuration, s.end) }))
+    .filter((s) => s.end > s.start)
+    .sort((a, b) => a.start - b.start);
+
+  if (sorted.length === 0) {
+    return [{ start: 0, end: rounded(clipDuration) }];
+  }
+
+  const cuts = [];
+  let currentStart = Math.max(0, sorted[0].start - bufferSec);
+  let currentEnd = Math.min(clipDuration, sorted[0].end + bufferSec);
+
+  for (let i = 1; i < sorted.length; i++) {
+    const nextStart = Math.max(0, sorted[i].start - bufferSec);
+    const nextEnd = Math.min(clipDuration, sorted[i].end + bufferSec);
+    const gap = sorted[i].start - sorted[i - 1].end;
+
+    if (gap > minGapSec && nextStart > currentEnd) {
+      cuts.push({ start: rounded(currentStart), end: rounded(currentEnd) });
+      currentStart = nextStart;
+      currentEnd = nextEnd;
+    } else {
+      currentEnd = Math.max(currentEnd, nextEnd);
+    }
+  }
+
+  cuts.push({ start: rounded(currentStart), end: rounded(currentEnd) });
+  return cuts;
+}
+
+/**
  * Pecah segmen subtitle panjang menjadi potongan pendek viral (2-4 kata per baris)
  * dengan distribusi durasi proporsional berdasarkan panjang karakter kata.
  */
@@ -112,14 +152,16 @@ export function assColour(hex, alpha = '00') {
   return `&H${alpha}${rgb.slice(4, 6)}${rgb.slice(2, 4)}${rgb.slice(0, 2)}`.toUpperCase();
 }
 
-/** Serialisasi subtitle ke ASS dasar, kompatibel filter subtitles FFmpeg. */
+/** Serialisasi subtitle ke ASS dasar dengan dukungan highlight kata viral. */
 export function toAss(subtitles, {
-  fontName = 'Arial',
-  fontSize = 36,
+  fontName = 'Montserrat',
+  fontSize = 42,
   alignment = 2,
   primaryColour = '&H00FFFFFF',
-  playResX = 1920,
-  playResY = 1080,
+  highlightColour = '&H0000E6FF', // Kuning terang ASS (&HAABBGGRR)
+  highlightKeywords = [],
+  playResX = 1080,
+  playResY = 1920,
 } = {}) {
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -128,13 +170,30 @@ PlayResY: ${playResY}
 
 [V4+ Styles]
 Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
-Style: Default,${fontName},${fontSize},${primaryColour},&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,${alignment},20,20,40,1
+Style: Default,${fontName},${fontSize},${primaryColour},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,${alignment},20,20,40,1
 
 [Events]
 Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text`;
 
+  const kwSet = new Set((highlightKeywords || []).map((k) => String(k).toUpperCase().trim()));
+
   const events = subtitles.map(({ start, end, text }) => {
-    const escaped = text.replace(/\\/g, '\\\\').replace(/[{}]/g, '').replace(/\r?\n/g, '\\N');
+    let processedText = String(text ?? '').toUpperCase().trim();
+
+    // Jika kata cocok dengan highlight_keywords, beri tag warna highlight
+    if (kwSet.size > 0) {
+      const words = processedText.split(/\s+/);
+      const highlighted = words.map((w) => {
+        const cleanWord = w.replace(/[^A-Z0-9]/g, '');
+        if (kwSet.has(cleanWord)) {
+          return `{\\c${highlightColour}&}${w}{\\c${primaryColour}&}`;
+        }
+        return w;
+      });
+      processedText = highlighted.join(' ');
+    }
+
+    const escaped = processedText.replace(/\\(?!c|N)/g, '\\\\').replace(/\r?\n/g, '\\N');
     return `Dialogue: 0,${assTime(start)},${assTime(end)},Default,,0,0,0,,${escaped}`;
   });
 

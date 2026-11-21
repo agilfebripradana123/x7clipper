@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shiftSubtitles, splitViralSubtitles, toSrt, toAss } from '../src/subtitleShift.js';
+import { shiftSubtitles, splitViralSubtitles, detectJumpCuts, toSrt, toAss } from '../src/subtitleShift.js';
 
 const sampleSegments = [
   { start: 5, end: 9, text: 'Sebelum klip' },
@@ -50,7 +50,27 @@ test('toAss menghasilkan script ASS dengan header dan event dialog', () => {
 
   assert.ok(ass.includes('[Script Info]'));
   assert.ok(ass.includes('Style: Default,Arial,24'));
-  assert.ok(ass.includes('Dialogue: 0,0:00:00.00,0:00:02.50,Default,,0,0,0,,Teks pertama'));
+  assert.ok(ass.includes('Dialogue: 0,0:00:00.00,0:00:02.50,Default,,0,0,0,,TEKS PERTAMA'));
+});
+
+test('toAss mendukung highlight keywords warna kontras', () => {
+  const subs = [{ start: 0.0, end: 2.0, text: 'konten rahasia viral' }];
+  const ass = toAss(subs, { highlightKeywords: ['RAHASIA'] });
+  assert.ok(ass.includes('{\\c&H0000E6FF&}RAHASIA{\\c&H00FFFFFF&}'));
+});
+
+test('detectJumpCuts mendeteksi jeda hening lebih dari 1.2 detik', () => {
+  const subs = [
+    { start: 1.0, end: 4.0, text: 'segmen satu' },
+    // gap 4.0 -> 7.0 (3 detik hening)
+    { start: 7.0, end: 12.0, text: 'segmen dua' },
+  ];
+  const cuts = detectJumpCuts(subs, 15, { minGapSec: 1.2, bufferSec: 0.15 });
+  assert.equal(cuts.length, 2);
+  assert.equal(cuts[0].start, 0.85); // 1.0 - 0.15
+  assert.equal(cuts[0].end, 4.15);   // 4.0 + 0.15
+  assert.equal(cuts[1].start, 6.85); // 7.0 - 0.15
+  assert.equal(cuts[1].end, 12.15);  // 12.0 + 0.15
 });
 
 test('splitViralSubtitles memecah baris panjang jadi 2-3 kata proporsional', () => {

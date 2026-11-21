@@ -24,6 +24,11 @@ test('klip valid: resolve segment ID ke detik + padding', () => {
     hook_type: 'contrarian',
     reason: 'Alasan',
     suggested_caption: 'Caption',
+    auto_edit: {
+      hook_banner_text: 'RAHASIA VIRAL CEPAT',
+      recommended_layout: 'full_crop',
+      highlight_keywords: ['RAHASIA', 'VIRAL'],
+    },
   }];
 
   const result = validateClips(raw, segmentMap, 80);
@@ -31,6 +36,8 @@ test('klip valid: resolve segment ID ke detik + padding', () => {
   // padding: start - 0.35 = -0.35 -> clamped 0, end + 0.50 = 40.50
   assert.equal(result[0].start_sec, 0);
   assert.equal(result[0].end_sec, 40.50);
+  assert.equal(result[0].auto_edit.hook_banner_text, 'RAHASIA VIRAL CEPAT');
+  assert.equal(result[0].auto_edit.recommended_layout, 'full_crop');
 });
 
 test('tolak klip dengan segment ID tidak ada di segmentMap', () => {

@@ -159,12 +159,12 @@ web-clipper/
 - [x] **Tahap 3: Multi-Cut Editor**
   - Timeline multi-segmen: potong intro/iklan membosankan di tengah klip, gabung beberapa bagian klip jadi satu video utuh (`cuts` array di API config, multi-trim concat FFmpeg, dan UI timeline segmen di editor).
 
-### Fase 7: Riwayat Proyek & URL State Persistence
-- [x] Backend: endpoint `GET /api/projects` (20 project terbaru + `withCount('clips')`) dan `DELETE /api/projects/{id}` (cascade delete clips & render jobs).
-- [x] Backend: Feature test `ProjectIndexDeleteApiTest.php` untuk verifikasi listing dan penghapusan project.
-- [x] Frontend: routing URL (path `/`, `/projects/:projectId`, `/projects/:projectId/clips/:clipId`) via History API / client routing agar F5 tidak menghilangkan state.
-- [x] Frontend: section Riwayat Proyek di bawah input URL dengan judul, status, jumlah klip, tombol buka & tombol hapus.
-- [x] Frontend: auto-resume polling saat refresh (status project, klip prepare, dan render job).
+### Fase 8: AI Auto-Editor & Studio Layout
+- [x] Sumber & Audio: format yt-dlp `bv*[height<=1440]+ba/b` + merge mp4, renderer `-sws_flags lanczos`, `-crf 18`, dan normalisasi audio `-af loudnorm=I=-14:TP=-1.5:LRA=11`.
+- [x] AI Editorial Plan: skema `auto_edit` di 9router & validator (`hook_banner_text`, `recommended_layout`, `highlight_keywords`).
+- [x] Auto Jump-Cut & Subtitle Highlight: deteksi jeda hening > 1.2 detik (`detectJumpCuts`), subtitle proporsional 2-3 kata dengan highlight kuning tebal (`toAss`), dan auto setup cuts saat `prepare_clip`.
+- [x] Web Editor Studio: 2-kolom desktop layout, canvas preview vertikal dengan drag-to-pan crop, visual multi-cut timeline (split playhead shortcut `S`, delete segment, auto-skip dead air saat diputar, undo `Ctrl+Z`), 3 tab panel (`Gaya & Hook`, `Subtitle`, `Export`), 3 preset 1-klik (`Hormozi`, `Podcast`, `Breaking`), dan debounced auto-save.
+- [x] Verifikasi: PHPUnit 37/37 PASS, worker node test 71/71 PASS, frontend build PASS, dan verifikasi riil FFmpeg render CLI berhasil.
 
 ---
 
@@ -200,11 +200,13 @@ web-clipper/
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 7 (Riwayat Proyek & URL State Persistence) — Selesai Penuh
-- **Tugas Terakhir Selesai:** Fase 7 — Riwayat Proyek & URL State:
-  - Backend: endpoint `GET /api/projects` (20 project + `withCount('clips')`), `DELETE /api/projects/{id}` + feature test `ProjectIndexDeleteApiTest.php` PASS 37/37.
-  - Frontend: URL routing berbasis `window.history` (`/projects/:id`, `/projects/:id/clips/:id`), auto-resume polling saat refresh (F5), dan section daftar riwayat proyek dengan aksi buka/hapus.
-  - Dokumentasi diperbarui di `PRD.md`, `docs/progress.md`, dan `AGENTS.md`.
-- **Tugas Berikutnya:** Semua fase (Fase 0 s/d 7) tuntas. Sistem web clipper siap digunakan.
-- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/ProjectController.php`, `backend/routes/api.php`, `backend/tests/Feature/Api/ProjectIndexDeleteApiTest.php`, `frontend/src/{App.jsx,api.js}`, `docs/progress.md`, `PRD.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 37/37 (159 assertions), `npm test` (worker) PASS 69/69, `npm run build` PASS.
+- **Fase Aktif:** Fase 8 (AI Auto-Editor & Studio Layout) — Selesai Penuh
+- **Tugas Terakhir Selesai:** Fase 8 — AI Auto-Editor & Studio Layout:
+  - Upgrade sumber: 1440p mp4 merge + lanczos scaling + CRF 18 + normalisasi audio `-af loudnorm=I=-14:TP=-1.5:LRA=11`.
+  - Skema AI `auto_edit`: hook banner, rekomendasi layout, keyword highlights di `ninerouter.js` & `validator.js`.
+  - Auto Jump-Cut & Subtitle Highlight: deteksi jeda hening > 1.2s, cuts otomatis di `prepare_clip`, highlight kuning `#FFE600` di generator ASS & preview.
+  - Web Editor Studio Layout: 2 kolom desktop, drag-to-pan crop, visual timeline cuts (split `S`, delete segment, auto-skip dead air, undo `Ctrl+Z`), 3 tab panel (`Gaya & Hook`, `Subtitle`, `Export`), 3 preset 1-klik (`Hormozi`, `Podcast`, `Breaking`), auto-save debounced.
+  - Verifikasi: PHPUnit 37/37 PASS, worker Node test 71/71 PASS, frontend build PASS, dan verifikasi riil FFmpeg render CLI berhasil.
+- **Tugas Berikutnya:** Sistem AI Auto-Editor & Web Clipper siap digunakan secara optimal.
+- **File Terakhir Diubah:** `worker/src/{clipper,renderer,subtitleShift,consumer,db,ninerouter,validator}.js`, `frontend/src/components/Editor.jsx`, `docs/progress.md`, `PRD.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 37/37 (159 assertions), `npm test` (worker) PASS 71/71, `npm run build` PASS.

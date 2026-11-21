@@ -356,31 +356,21 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, CSS 32.10 kB / JS 279.13 kB).
 - **Status:** Selesai (Fase 5 tuntas & seluruh MVP Fase 0 s/d 5 selesai!).
 
-## [2026-11-21] Post-MVP Polish & Multi-Cut (Fase 6)
-- **Tujuan:** Peningkatan kualitas resolusi (1440p, lanczos, crf 18), auto polish subtitle & layout 9:16, serta timeline multi-cut.
+## [2026-11-21] AI Auto-Editor & Studio Layout (Fase 8)
+- **Tujuan:** Transformasi pipeline menjadi AI Auto-Editor matang (1440p, loudnorm audio broadcast, visual editorial plan, auto jump-cut dead air, viral subtitle highlight, dan studio layout web editor).
 - **File diubah/ditambah:**
-  - `worker/src/clipper.js` — format yt-dlp `bv*[height<=1440]+ba/b` dengan `--merge-output-format mp4`.
-  - `worker/src/renderer.js` — lanczos scaling, crf 18, layout `blur` background split/boxblur, hook banner burn-in, dan `buildMultiCutFilter` trim concat.
-  - `worker/src/subtitleShift.js` — `splitViralSubtitles` potong 2-3 kata per baris proporsional.
-  - `frontend/src/components/Editor.jsx` — panel Multi-Cut Timeline, layout selector (crop vs blur), hook banner input, dan integrasi font tebal Montserrat.
-- **Hasil uji:**
-  - `php artisan test` — **PASS 35/35**.
-  - `npm test` (worker) — **PASS 69/69**.
-  - `npm run build` (frontend) — **PASS**.
-- **Status:** Selesai (Fase 6 tuntas).
-
-## [2026-11-21] Riwayat Proyek & URL State Persistence (Fase 7)
-- **Tujuan:** Menyimpan riwayat 20 proyek terbaru, menjaga state URL saat refresh (F5), dan auto-resume proses polling.
-- **File diubah/ditambah:**
-  - `backend/app/Http/Controllers/Api/ProjectController.php` — endpoint `index()` (20 proyek + `withCount('clips')`) dan `destroy()` (hapus proyek cascade).
-  - `backend/routes/api.php` — `GET /api/projects` dan `DELETE /api/projects/{id}`.
-  - `backend/tests/Feature/Api/ProjectIndexDeleteApiTest.php` — feature test listing & cascade delete.
-  - `frontend/src/api.js` — client method `getProjects()` & `deleteProject(id)`.
-  - `frontend/src/App.jsx` — URL routing sync via `pushState`/`popstate` (`/projects/:id/clips/:id`), auto-resume polling saat mount/refresh, dan section "Riwayat Proyek" dengan tombol buka/hapus.
+  - `worker/src/clipper.js` — yt-dlp `bv*[height<=1440]+ba/b` merge mp4.
+  - `worker/src/renderer.js` — audio broadcast normalization `-af loudnorm=I=-14:TP=-1.5:LRA=11` (single & multi-cut), lanczos, crf 18, highlight subtitle ASS generator.
+  - `worker/src/ninerouter.js` & `worker/src/validator.js` — skema `auto_edit` (hook_banner_text, recommended_layout, highlight_keywords).
+  - `worker/src/subtitleShift.js` — `detectJumpCuts` untuk auto split dead air > 1.2 detik dan word-level highlight matching.
+  - `worker/src/consumer.js` & `worker/src/db.js` — default auto-edit & auto-cuts diterapkan langsung saat prepare klip.
+  - `frontend/src/components/Editor.jsx` — Studio Layout 2-kolom: canvas preview dengan drag-to-pan crop, visual jump-cut timeline (split shortcut `S`, delete/restore, auto-skip dead air, undo `Ctrl+Z`), 3 tab panel (`Gaya & Hook`, `Subtitle`, `Export`), 3 preset 1-klik (`Hormozi`, `Podcast`, `Breaking`), dan debounced auto-save.
 - **Hasil uji:**
   - `php artisan test` — **PASS 37/37 (159 assertions)**.
-  - `npm run build` (frontend) — **PASS** (33 modules, JS 285.33 kB).
-- **Status:** Selesai (Fase 7 tuntas).
+  - `npm test` (worker) — **PASS 71/71**.
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 274.44 kB).
+  - Verifikasi riil FFmpeg: CLI render test sukses menghasilkan 1080x1920 9:16 dengan audio broadcast normal dan banner/subtitle burn-in.
+- **Status:** Selesai (Fase 8 tuntas).
 
 
 

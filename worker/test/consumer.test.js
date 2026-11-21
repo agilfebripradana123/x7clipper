@@ -169,11 +169,11 @@ test('prepareClip sukses: clipId deterministik, status ready, subtitle tersimpan
   assert.equal(clipArgs[0][3].clipId, 'clip-5');
 
   const ready = calls.find(([name]) => name === 'markClipReady');
-  assert.deepEqual(ready, [
-    'markClipReady',
-    5,
-    { rawClipPath: 'D:\\storage\\raw-clips\\clip-5.mp4', subtitles: [{ start: 0, end: 30, text: 'Halo' }] },
-  ]);
+  assert.equal(ready[0], 'markClipReady');
+  assert.equal(ready[1], 5);
+  assert.equal(ready[2].rawClipPath, 'D:\\storage\\raw-clips\\clip-5.mp4');
+  assert.deepEqual(ready[2].subtitles, [{ start: 0, end: 30, text: 'Halo' }]);
+  assert.ok(ready[2].editConfig);
   assert.equal(result.clipPath, 'D:\\storage\\raw-clips\\clip-5.mp4');
   assert.ok(!calls.some(([name]) => name === 'markClipFailed'));
 });
@@ -215,11 +215,12 @@ test('db params: JSON diserialisasi dan INSERT memakai NOW()', () => {
     title: 'Klip', start_sec: '10.5', end_sec: '42.25', viral_score: '90',
     hook_type: 'story', reason: 'alasan', suggested_caption: 'caption',
     subtitle_json: [{ start: 0, end: 1, text: 'hai' }],
+    edit_config_json: null,
   });
 
   assert.equal(typeof params[2], 'number');
   assert.equal(params[8], '[{"start":0,"end":1,"text":"hai"}]');
-  assert.equal(params[9], null);
+  assert.ok(params[9].includes('"hook_banner"'));
   assert.equal(jsonOrNull({ a: 1 }), '{"a":1}');
   assert.equal(jsonOrNull(null), null);
   assert.equal(CLIP_INSERT_SQL.match(/NOW\(\)/g).length, 2);

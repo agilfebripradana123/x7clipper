@@ -33,6 +33,24 @@ export const CLIP_INSERT_SQL = `INSERT INTO clips
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
 
 export function toClipParams(projectId, clip) {
+  const autoEdit = clip.auto_edit || {};
+  const defaultEditConfig = {
+    aspect_ratio: '9:16',
+    crop_x: 0.5,
+    layout_mode: autoEdit.recommended_layout === 'blur_bg' ? 'blur' : 'crop',
+    hook_banner: {
+      enabled: true,
+      text: autoEdit.hook_banner_text || clip.title || '',
+    },
+    subtitle: {
+      enabled: true,
+      position: 'bottom',
+      font_size: 42,
+      color: '#FFFFFF',
+      highlight_keywords: autoEdit.highlight_keywords || [],
+    },
+  };
+
   return [
     projectId,
     clip.title,
@@ -43,7 +61,7 @@ export function toClipParams(projectId, clip) {
     clip.reason ?? clip.ai_reason ?? null,
     clip.suggested_caption ?? null,
     jsonOrNull(clip.subtitle_json),
-    jsonOrNull(clip.edit_config_json),
+    jsonOrNull(clip.edit_config_json ?? defaultEditConfig),
   ];
 }
 
@@ -122,11 +140,11 @@ export function createDb({ config = dbConfigFromEnv(), createPool } = {}) {
       await query("UPDATE clips SET prepare_status = 'preparing', prepare_error = NULL, updated_at = NOW() WHERE id = ?", [id]);
     },
 
-    /** subtitle_json hanya ditimpa bila `subtitles` diberikan (jalur idempoten aman). */
-    async markClipReady(id, { rawClipPath, subtitles } = {}) {
+    /** subtitle_json & edit_config_json diperbarui saat klip disiapkan. */
+    async markClipReady(id, { rawClipPath, subtitles, editConfig } = {}) {
       await query(
-        'UPDATE clips SET prepare_status = ?, prepare_error = NULL, raw_clip_path = ?, subtitle_json = COALESCE(?, subtitle_json), updated_at = NOW() WHERE id = ?',
-        ['ready', rawClipPath ?? null, jsonOrNull(subtitles), id],
+        'UPDATE clips SET prepare_status = ?, prepare_error = NULL, raw_clip_path = ?, subtitle_json = COALESCE(?, subtitle_json), edit_config_json = COALESCE(?, edit_config_json), updated_at = NOW() WHERE id = ?',
+        ['ready', rawClipPath ?? null, jsonOrNull(subtitles), jsonOrNull(editConfig), id],
       );
     },
 

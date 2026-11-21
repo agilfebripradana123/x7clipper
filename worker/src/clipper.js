@@ -106,11 +106,14 @@ export async function clipSegment(url, startSec, endSec, {
   const sectionSpec = `*${startSec}-${endSec}`;
 
   // 1. Download potongan segmen parsial via yt-dlp
+  // Ambil stream resolusi 1080p–1440p dengan format bv*[height<=1440]+ba/b dan merge ke mp4
   const ytdlpArgs = [
     '--download-sections', sectionSpec,
     '--force-keyframes-at-cuts',
     '--ffmpeg-location', dirname(ffmpeg),
     '--no-playlist',
+    '--retries', '5',
+    '--fragment-retries', '5',
     '-f', 'bv*[height<=1440]+ba/b',
     '--merge-output-format', 'mp4',
     '-o', tempFile,

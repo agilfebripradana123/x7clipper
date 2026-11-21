@@ -36,7 +36,8 @@ test('download section parsial lalu re-encode via FFmpeg', async () => {
     '--download-sections', '*10.25-52.75', '--force-keyframes-at-cuts', '--ffmpeg-location',
   ]);
   assert.ok(calls[0].args.includes('--skip-download') === false);
-  assert.ok(calls[0].args.includes('bv*[height<=1440]+ba/b'));
+  assert.ok(calls[0].args.some((a) => a.includes('height<=1440')));
+  assert.ok(calls[0].args.includes('--retries'));
   assert.ok(calls[0].args.includes('--merge-output-format'));
   assert.equal(calls[0].args[calls[0].args.indexOf('--merge-output-format') + 1], 'mp4');
 

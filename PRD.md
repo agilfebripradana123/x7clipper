@@ -67,16 +67,19 @@ Sistem mengekstrak transkrip bertimestamp, mengirimkannya ke LLM melalui **9rout
 - FFmpeg merapikan *keyframe* awal potongan agar video tidak membeku (*freeze*) saat diputar di browser.
 - Timestamp subtitle dipotong sesuai rentang klip dan digeser mundur sebesar `start_sec` sehingga selalu dimulai di `00:00`.
 
-### FR-4: Web Video Editor
-- **Trim Control:** User dapat menggeser `trim_start` dan `trim_end` di dalam rentang klip.
-- **Aspect Ratio & Crop:** Mendukung mode `16:9` (asli) dan `9:16` (vertikal) dengan kontrol posisi geser horizontal (`crop_x` dalam rasio `0.0` hingga `1.0`).
-- **Subtitle Editor:** Daftar baris teks bertimestamp yang dapat diedit langsung; mendukung pilihan posisi vertikal (`top`, `middle`, `bottom`), ukuran font, warna teks, dan toggle aktif/nonaktif subtitle.
-- **Live Preview:** Perubahan rasio crop dan subtitle langsung terlihat di pemutar browser tanpa menunggu render server.
+### FR-4: Web Video Editor (Studio Layout & AI Auto-Editor)
+- **Canvas Preview 9:16 & Auto-Skip:** Pratinjau vertikal langsung menerapkan hook banner, layout (crop/blur), dan viral subtitle. Saat video diputar, playhead otomatis melompati (auto-skip) bagian dead air yang dipotong.
+- **Drag-to-Pan Crop:** User dapat menggeser/drag area preview langsung ke kiri/kanan untuk mengatur `crop_x` (0.0 - 1.0).
+- **Panel Bertab (Gaya & Hook, Subtitle, Export):**
+  - **Preset 1-Klik:** 3 preset instan (`Hormozi Bold`, `Podcast Clean`, `Breaking Hook`) untuk kombinasi gaya banner, subtitle, dan layout.
+  - **Subtitle Interaktif:** Sinkronisasi playhead; klik baris teks langsung memposisikan video ke detik tersebut.
+  - **Multi-Cut Timeline:** Split segmen di playhead (shortcut `S`), hapus/pulihkan blok, undo (`Ctrl+Z`), dan spacebar Play/Pause.
+- **Auto-Save:** Konfigurasi editor otomatis tersimpan di latar belakang tanpa tombol simpan manual yang membingungkan.
 
 ### FR-5: Final Rendering & Export
 - Perubahan editor disimpan sebagai konfigurasi JSON (`edit_config_json`).
 - Saat user menekan *Export*, backend memasukkan job ke Redis Queue.
-- Worker menjalankan FFmpeg untuk memproses `trim -> crop -> burn-in subtitle` menggunakan font yang identik dengan preview browser.
+- Worker menjalankan FFmpeg untuk memproses `trim/multi-cut concat -> crop/blur -> burn-in ASS subtitle + audio broadcast loudnorm (-14 LUFS)` menggunakan font open-source Montserrat tebal.
 - User dapat melihat persentase progres render dan mengunduh file `.mp4` final.
 - **Riwayat Proyek & URL State Persistence:**
   - Riwayat 20 proyek terbaru ditampilkan di halaman utama (judul, status badge, jumlah klip, tombol buka & hapus).

@@ -125,7 +125,8 @@ export function buildMultiCutFilter({ cuts, baseFilterString }) {
     concatInputs.push(`[v${i}][a${i}]`);
   }
 
-  lines.push(`${concatInputs.join('')}concat=n=${n}:v=1:a=1[concatenated_v][outa]`);
+  lines.push(`${concatInputs.join('')}concat=n=${n}:v=1:a=1[concatenated_v][concatenated_a]`);
+  lines.push(`[concatenated_a]loudnorm=I=-14:TP=-1.5:LRA=11[outa]`);
 
   // Sambungkan visual processing (crop, blur, subtitle) ke concatenated_v
   let vProcess = baseFilterString;
@@ -180,6 +181,7 @@ export function buildArgs({ rawClipPath, outputPath, config = {}, assPath = null
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-crf', '18',
+    '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11',
     '-c:a', 'aac',
     '-movflags', '+faststart',
     '-progress', 'pipe:1',
@@ -254,6 +256,8 @@ export async function renderClip({
       fontSize: subtitleConfig.font_size ?? 42,
       alignment: ALIGNMENT[subtitleConfig.position] ?? 2,
       primaryColour: assColour(subtitleConfig.color),
+      highlightColour: assColour(subtitleConfig.highlight_color || '#FFE600'),
+      highlightKeywords: subtitleConfig.highlight_keywords || [],
       playResX: dims.width,
       playResY: dims.height,
     });

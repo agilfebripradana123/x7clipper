@@ -78,6 +78,7 @@ test('buildArgs memuat trim, filter, codec, dan progress pipe', () => {
   assert.deepEqual(args.slice(args.indexOf('-t'), args.indexOf('-t') + 2), ['-t', '10']);
   assert.equal(args[args.indexOf('-c:v') + 1], 'libx264');
   assert.equal(args[args.indexOf('-crf') + 1], '18');
+  assert.equal(args[args.indexOf('-af') + 1], 'loudnorm=I=-14:TP=-1.5:LRA=11');
   assert.equal(args[args.indexOf('-progress') + 1], 'pipe:1');
   assert.equal(args.at(-1), 'out.mp4');
 });

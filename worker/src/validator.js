@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+const autoEditSchema = z.object({
+  hook_banner_text: z.string().max(100).optional(),
+  recommended_layout: z.enum(['full_crop', 'blur_bg']).optional(),
+  highlight_keywords: z.array(z.string()).optional(),
+}).optional();
+
 const clipSchema = z.object({
   title: z.string().min(1).max(60),
   start_segment_id: z.string().regex(/^S\d+$/),
@@ -8,6 +14,7 @@ const clipSchema = z.object({
   hook_type: z.enum(['contrarian', 'story', 'actionable_tip', 'emotional', 'debate']),
   reason: z.string().min(1),
   suggested_caption: z.string().min(1),
+  auto_edit: autoEditSchema,
 });
 
 /** Validasi respons AI, resolve Segment-ID, lalu tambah safety padding. */
