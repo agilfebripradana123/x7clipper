@@ -270,6 +270,19 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 - **Hasil uji:** `npm run build` — **PASS** (33 modules, CSS 27.77 kB, JS 252.31 kB).
 - **Status:** Selesai (Fase 4 Item 3 tuntas).
 
+## [2026-11-21] Rasio Aspek & Overlay Crop (Fase 4 - Item 4)
+- **Tujuan:** Mode `16:9` / `9:16` dengan pemilihan area crop vertikal yang konsisten dengan render final.
+- **File diubah:**
+  - `frontend/src/components/Editor.jsx` — state `aspectRatio` + `cropX`, geometri stage via `ResizeObserver` + `videoWidth/Height`, overlay crop 9:16 draggable, simpan gabungan trim + rasio + crop.
+- **Kontrak:**
+  - `crop_x = left / (displayW - frameW)`, rentang 0..1 — sama dengan perhitungan renderer (`crop_x * (iw - ih*9/16)`).
+  - Overlay 9:16: border + dim/hatch di luar area, pointer capture mouse/touch, keyboard Arrow ±1% / Shift ±10% / Home/End, `role="slider"`.
+  - Mode 16:9 menyembunyikan overlay dan memakai frame penuh.
+  - Satu PATCH `edit_config` berisi `trim_start`, `trim_end`, `aspect_ratio`, `crop_x` (partial merge).
+  - Reset crop ke tengah (0.5) tersedia.
+- **Hasil uji:** `npm run build` — **PASS** (33 modules, CSS 28.67 kB, JS 257.26 kB).
+- **Status:** Selesai (Fase 4 Item 4 tuntas).
+
 
 
 

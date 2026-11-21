@@ -190,8 +190,19 @@ export default function Editor({ clip, onBack }) {
   const [videoError, setVideoError] = useState(false)
   const [saveState, setSaveState] = useState('idle')
   const [saveError, setSaveError] = useState(null)
+  const [aspectRatio, setAspectRatio] = useState(
+    clip.edit_config_json?.aspect_ratio === '9:16' ? '9:16' : '16:9',
+  )
+  const [cropX, setCropX] = useState(() => {
+    const c = clip.edit_config_json?.crop_x
+    return typeof c === 'number' ? clamp(round3(c), 0, 1) : 0.5
+  })
+  const [stageSize, setStageSize] = useState({ w: 0, h: 0 })
+  const [videoSize, setVideoSize] = useState({ w: 0, h: 0 })
 
   const videoRef = useRef(null)
+  const stageRef = useRef(null)
+  const dragRef = useRef(null)
 
   const seekTo = (t) => {
     const v = videoRef.current
@@ -266,6 +277,49 @@ export default function Editor({ clip, onBack }) {
     }
   }, [trim.start, trim.end])
 
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect
+      if (r) setStageSize({ w: r.width, h: r.height })
+    })
+    ro.observe(el)
+    setStageSize({ w: el.clientWidth, h: el.clientHeight })
+    return () => ro.disconnect()
+  }, [])
+
+  const geom = useMemo(() => {
+    if (!stageSize.w || !stageSize.h || !videoSize.w || !videoSize.h) return null
+    const scale = Math.min(stageSize.w / videoSize.w, stageSize.h / videoSize.h)
+    const dispW = videoSize.w * scale
+    const dispH = videoSize.h * scale
+    const offsetX = (stageSize.w - dispW) / 2
+    const offsetY = (stageSize.h - dispH) / 2
+    const frameH = dispH
+    const frameW = Math.min(dispW, (dispH * 9) / 16)
+    const range = Math.max(0, dispW - frameW)
+    return { dispW, dispH, offsetX, offsetY, frameH, frameW, range }
+  }, [stageSize, videoSize])
+
+  const changeAspect = (value) => {
+    setAspectRatio(value)
+    setSaveState('idle')
+    setSaveError(null)
+  }
+
+  const changeCrop = (value) => {
+    setCropX(clamp(value, 0, 1))
+    setSaveState('idle')
+    setSaveError(null)
+  }
+
+  const resetCrop = () => {
+    setCropX(0.5)
+    setSaveState('idle')
+    setSaveError(null)
+  }
+
   const resetRange = () => {
     setTrim({ start: 0, end: duration })
     setSaveState('idle')
@@ -286,7 +340,12 @@ export default function Editor({ clip, onBack }) {
     setSaveError(null)
     try {
       const res = await patchClipConfig(clip.id, {
-        edit_config: { trim_start: round3(trim.start), trim_end: round3(trim.end) },
+        edit_config: {
+          trim_start: round3(trim.start),
+          trim_end: round3(trim.end),
+          aspect_ratio: aspectRatio,
+          crop_x: round3(cropX),
+        },
       })
       const saved = res?.data?.edit_config_json
       if (saved) {
@@ -294,6 +353,12 @@ export default function Editor({ clip, onBack }) {
           start: typeof saved.trim_start === 'number' ? round1(saved.trim_start) : prev.start,
           end: typeof saved.trim_end === 'number' ? round1(saved.trim_end) : prev.end,
         }))
+        if (saved.aspect_ratio === '16:9' || saved.aspect_ratio === '9:16') {
+          setAspectRatio(saved.aspect_ratio)
+        }
+        if (typeof saved.crop_x === 'number') {
+          setCropX(clamp(round3(saved.crop_x), 0, 1))
+        }
       }
       setSaveState('saved')
     } catch (err) {
@@ -369,14 +434,20 @@ export default function Editor({ clip, onBack }) {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div>
-          <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-line bg-black">
+          <div
+            ref={stageRef}
+            className="relative aspect-video w-full overflow-hidden rounded-xl border border-line bg-black"
+          >
             <video
               ref={videoRef}
               src={`/api/clips/${clip.id}/video`}
               preload="metadata"
               playsInline
               className="h-full w-full bg-black object-contain"
-              onLoadedMetadata={() => setReady(true)}
+              onLoadedMetadata={(e) => {
+                setReady(true)
+                setVideoSize({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })
+              }}
               onTimeUpdate={handleTimeUpdate}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
@@ -385,6 +456,96 @@ export default function Editor({ clip, onBack }) {
                 setReady(false)
               }}
             />
+
+            {aspectRatio === '9:16' && geom && (
+              <>
+                <div
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: geom.offsetX,
+                    top: geom.offsetY,
+                    width: Math.max(0, cropX * geom.range),
+                    height: geom.dispH,
+                    backgroundColor: 'rgba(10,11,13,0.62)',
+                    backgroundImage:
+                      'repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 7px)',
+                  }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: geom.offsetX + cropX * geom.range + geom.frameW,
+                    top: geom.offsetY,
+                    width: Math.max(0, (1 - cropX) * geom.range),
+                    height: geom.dispH,
+                    backgroundColor: 'rgba(10,11,13,0.62)',
+                    backgroundImage:
+                      'repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 7px)',
+                  }}
+                  aria-hidden="true"
+                />
+                <div
+                  role="slider"
+                  tabIndex={0}
+                  aria-label="Posisi crop horizontal"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(cropX * 100)}
+                  aria-valuetext={`Posisi ${Math.round(cropX * 100)} persen`}
+                  aria-orientation="horizontal"
+                  style={{
+                    left: geom.offsetX + cropX * geom.range,
+                    top: geom.offsetY,
+                    width: geom.frameW,
+                    height: geom.frameH,
+                  }}
+                  className="absolute cursor-ew-resize touch-none border border-accent/90 shadow-[0_0_0_1px_rgba(10,11,13,0.7)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  onPointerDown={(e) => {
+                    e.preventDefault()
+                    e.currentTarget.setPointerCapture?.(e.pointerId)
+                    dragRef.current = { startX: e.clientX, startCrop: cropX }
+                  }}
+                  onPointerMove={(e) => {
+                    const d = dragRef.current
+                    if (!d || !geom.range) return
+                    changeCrop(d.startCrop + (e.clientX - d.startX) / geom.range)
+                  }}
+                  onPointerUp={(e) => {
+                    dragRef.current = null
+                    e.currentTarget.releasePointerCapture?.(e.pointerId)
+                  }}
+                  onPointerCancel={(e) => {
+                    dragRef.current = null
+                    e.currentTarget.releasePointerCapture?.(e.pointerId)
+                  }}
+                  onKeyDown={(e) => {
+                    const step = e.shiftKey ? 0.1 : 0.01
+                    if (e.key === 'ArrowLeft') {
+                      e.preventDefault()
+                      changeCrop(cropX - step)
+                    } else if (e.key === 'ArrowRight') {
+                      e.preventDefault()
+                      changeCrop(cropX + step)
+                    } else if (e.key === 'Home') {
+                      e.preventDefault()
+                      changeCrop(0)
+                    } else if (e.key === 'End') {
+                      e.preventDefault()
+                      changeCrop(1)
+                    }
+                  }}
+                >
+                  <span className="absolute left-1/2 top-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-accent px-2 py-0.5 font-mono text-[10px] font-medium text-void">
+                    9:16
+                  </span>
+                  <span
+                    className="absolute left-1/2 top-1/2 h-6 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/70"
+                    aria-hidden="true"
+                  />
+                </div>
+              </>
+            )}
 
             {!ready && !videoError && (
               <div className="absolute inset-0 grid place-items-center bg-black/70">
@@ -450,7 +611,7 @@ export default function Editor({ clip, onBack }) {
 
           <div className="mt-5 flex flex-col gap-2">
             <button type="button" onClick={handleSave} disabled={saveState === 'saving'} className={BTN_PRIMARY}>
-              {saveState === 'saving' ? 'Menyimpan…' : 'Simpan trim'}
+              {saveState === 'saving' ? 'Menyimpan…' : 'Simpan perubahan'}
             </button>
             <button type="button" onClick={resetRange} className={BTN_GHOST}>
               Atur ulang ke durasi penuh
@@ -466,6 +627,59 @@ export default function Editor({ clip, onBack }) {
           <p className="mt-4 text-xs leading-relaxed text-faint">
             Geser pegangan di timeline atau pakai tombol panah. Shift + panah untuk langkah 1 detik.
           </p>
+
+          <div className="mt-5 border-t border-line pt-5">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Rasio &amp; Crop</p>
+
+            <div role="group" aria-label="Rasio aspek" className="mt-3 grid grid-cols-2 gap-2">
+              {[
+                ['16:9', 'Lanskap'],
+                ['9:16', 'Vertikal'],
+              ].map(([value, label]) => {
+                const active = aspectRatio === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => changeAspect(value)}
+                    aria-pressed={active}
+                    className={`rounded-lg border px-3 py-2.5 text-left transition ${
+                      active
+                        ? 'border-accent bg-accent/10'
+                        : 'border-line hover:border-line-2 hover:bg-panel-2'
+                    }`}
+                  >
+                    <span className={`block font-mono text-xs ${active ? 'text-accent' : 'text-muted'}`}>
+                      {value}
+                    </span>
+                    <span className={`mt-0.5 block text-[11px] ${active ? 'text-ink' : 'text-faint'}`}>
+                      {label}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {aspectRatio === '9:16' ? (
+              <>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="font-mono text-[11px] text-muted">Posisi {Math.round(cropX * 100)}%</span>
+                  <button
+                    type="button"
+                    onClick={resetCrop}
+                    className="rounded text-[11px] text-faint underline-offset-2 hover:text-muted hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    Atur ulang crop ke tengah
+                  </button>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-faint">
+                  Geser bingkai di video, atau fokuskan lalu pakai tombol panah.
+                </p>
+              </>
+            ) : (
+              <p className="mt-3 text-xs leading-relaxed text-faint">Mode lanskap memakai frame penuh.</p>
+            )}
+          </div>
         </aside>
       </div>
     </div>
