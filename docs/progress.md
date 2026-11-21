@@ -356,6 +356,33 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, CSS 32.10 kB / JS 279.13 kB).
 - **Status:** Selesai (Fase 5 tuntas & seluruh MVP Fase 0 s/d 5 selesai!).
 
+## [2026-11-21] Post-MVP Polish & Multi-Cut (Fase 6)
+- **Tujuan:** Peningkatan kualitas resolusi (1440p, lanczos, crf 18), auto polish subtitle & layout 9:16, serta timeline multi-cut.
+- **File diubah/ditambah:**
+  - `worker/src/clipper.js` — format yt-dlp `bv*[height<=1440]+ba/b` dengan `--merge-output-format mp4`.
+  - `worker/src/renderer.js` — lanczos scaling, crf 18, layout `blur` background split/boxblur, hook banner burn-in, dan `buildMultiCutFilter` trim concat.
+  - `worker/src/subtitleShift.js` — `splitViralSubtitles` potong 2-3 kata per baris proporsional.
+  - `frontend/src/components/Editor.jsx` — panel Multi-Cut Timeline, layout selector (crop vs blur), hook banner input, dan integrasi font tebal Montserrat.
+- **Hasil uji:**
+  - `php artisan test` — **PASS 35/35**.
+  - `npm test` (worker) — **PASS 69/69**.
+  - `npm run build` (frontend) — **PASS**.
+- **Status:** Selesai (Fase 6 tuntas).
+
+## [2026-11-21] Riwayat Proyek & URL State Persistence (Fase 7)
+- **Tujuan:** Menyimpan riwayat 20 proyek terbaru, menjaga state URL saat refresh (F5), dan auto-resume proses polling.
+- **File diubah/ditambah:**
+  - `backend/app/Http/Controllers/Api/ProjectController.php` — endpoint `index()` (20 proyek + `withCount('clips')`) dan `destroy()` (hapus proyek cascade).
+  - `backend/routes/api.php` — `GET /api/projects` dan `DELETE /api/projects/{id}`.
+  - `backend/tests/Feature/Api/ProjectIndexDeleteApiTest.php` — feature test listing & cascade delete.
+  - `frontend/src/api.js` — client method `getProjects()` & `deleteProject(id)`.
+  - `frontend/src/App.jsx` — URL routing sync via `pushState`/`popstate` (`/projects/:id/clips/:id`), auto-resume polling saat mount/refresh, dan section "Riwayat Proyek" dengan tombol buka/hapus.
+- **Hasil uji:**
+  - `php artisan test` — **PASS 37/37 (159 assertions)**.
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 285.33 kB).
+- **Status:** Selesai (Fase 7 tuntas).
+
+
 
 
 

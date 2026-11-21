@@ -66,6 +66,16 @@ export async function getProject(id) {
   return res.data
 }
 
+export async function getProjects() {
+  const res = await request('/projects')
+  return res.data
+}
+
+export async function deleteProject(id) {
+  const res = await request(`/projects/${id}`, { method: 'DELETE' })
+  return res
+}
+
 export function patchClipConfig(clipId, payload) {
   return request(`/clips/${clipId}/config`, {
     method: 'PATCH',

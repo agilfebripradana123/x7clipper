@@ -159,6 +159,13 @@ web-clipper/
 - [x] **Tahap 3: Multi-Cut Editor**
   - Timeline multi-segmen: potong intro/iklan membosankan di tengah klip, gabung beberapa bagian klip jadi satu video utuh (`cuts` array di API config, multi-trim concat FFmpeg, dan UI timeline segmen di editor).
 
+### Fase 7: Riwayat Proyek & URL State Persistence
+- [x] Backend: endpoint `GET /api/projects` (20 project terbaru + `withCount('clips')`) dan `DELETE /api/projects/{id}` (cascade delete clips & render jobs).
+- [x] Backend: Feature test `ProjectIndexDeleteApiTest.php` untuk verifikasi listing dan penghapusan project.
+- [x] Frontend: routing URL (path `/`, `/projects/:projectId`, `/projects/:projectId/clips/:clipId`) via History API / client routing agar F5 tidak menghilangkan state.
+- [x] Frontend: section Riwayat Proyek di bawah input URL dengan judul, status, jumlah klip, tombol buka & tombol hapus.
+- [x] Frontend: auto-resume polling saat refresh (status project, klip prepare, dan render job).
+
 ---
 
 ## 5. Log Keputusan Teknis (ADR)
@@ -193,12 +200,11 @@ web-clipper/
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 6 (Post-MVP Polish & Multi-Cut) — Selesai Penuh (Tahap 1, 2, 3 Tuntas)
-- **Tugas Terakhir Selesai:** Fase 6 Tahap 3 — Multi-Cut Editor:
-  - Backend API: validasi array `cuts` (`[{start, end}]`) di `ClipController.php`.
-  - Worker FFmpeg: builder `parseCuts`, `buildMultiCutFilter` (trim + atrim + concat `v=1:a=1` + visual filter) di `renderer.js` + unit test PASS 69/69.
-  - Frontend Editor: panel Multi-Cut Timeline di `Editor.jsx` (tambah/hapus segmen, seek, kalkulasi total output, simpan konfigurasi).
-  - Semua test PASS: PHPUnit 35/35, Node unit test 69/69, Frontend Vite build PASS.
-- **Tugas Berikutnya:** Seluruh Fase 0 hingga Fase 6 sudah tuntas sempurna! Sistem web clipper siap digunakan untuk produksi dan eksperimen konten video pendek.
-- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/ProjectController.php`, `backend/routes/api.php`, `backend/database/migrations/*add_local_upload_fields*`, `backend/tests/Feature/Api/ProjectUploadApiTest.php`, `worker/src/{consumer,clipper,db}.js`, `frontend/src/{App.jsx,api.js}`, `docs/{RUNNING.md,progress.md}`, `AGENTS.md`.
-- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 35/35 (150 assertions), `npm test` (worker) PASS 65/65, `npm run build` PASS. Semua item to-do di Fase 0 s/d 5 sudah selesai.
+- **Fase Aktif:** Fase 7 (Riwayat Proyek & URL State Persistence) — Selesai Penuh
+- **Tugas Terakhir Selesai:** Fase 7 — Riwayat Proyek & URL State:
+  - Backend: endpoint `GET /api/projects` (20 project + `withCount('clips')`), `DELETE /api/projects/{id}` + feature test `ProjectIndexDeleteApiTest.php` PASS 37/37.
+  - Frontend: URL routing berbasis `window.history` (`/projects/:id`, `/projects/:id/clips/:id`), auto-resume polling saat refresh (F5), dan section daftar riwayat proyek dengan aksi buka/hapus.
+  - Dokumentasi diperbarui di `PRD.md`, `docs/progress.md`, dan `AGENTS.md`.
+- **Tugas Berikutnya:** Semua fase (Fase 0 s/d 7) tuntas. Sistem web clipper siap digunakan.
+- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/ProjectController.php`, `backend/routes/api.php`, `backend/tests/Feature/Api/ProjectIndexDeleteApiTest.php`, `frontend/src/{App.jsx,api.js}`, `docs/progress.md`, `PRD.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 37/37 (159 assertions), `npm test` (worker) PASS 69/69, `npm run build` PASS.

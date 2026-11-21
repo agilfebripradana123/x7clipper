@@ -78,6 +78,9 @@ Sistem mengekstrak transkrip bertimestamp, mengirimkannya ke LLM melalui **9rout
 - Saat user menekan *Export*, backend memasukkan job ke Redis Queue.
 - Worker menjalankan FFmpeg untuk memproses `trim -> crop -> burn-in subtitle` menggunakan font yang identik dengan preview browser.
 - User dapat melihat persentase progres render dan mengunduh file `.mp4` final.
+- **Riwayat Proyek & URL State Persistence:**
+  - Riwayat 20 proyek terbaru ditampilkan di halaman utama (judul, status badge, jumlah klip, tombol buka & hapus).
+  - URL routing (`/projects/:projectId`, `/projects/:projectId/clips/:clipId`) menjaga state saat refresh halaman (F5) dan auto-resume proses polling (analisis, prepare klip, dan render).
 
 ---
 

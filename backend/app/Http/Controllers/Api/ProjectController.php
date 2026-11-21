@@ -13,6 +13,37 @@ use Throwable;
 
 class ProjectController extends Controller
 {
+    public function index(): JsonResponse
+    {
+        $projects = Project::withCount('clips')
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'data' => $projects->map(fn (Project $p) => [
+                'id' => $p->id,
+                'source_type' => $p->source_type,
+                'youtube_url' => $p->youtube_url,
+                'video_title' => $p->video_title,
+                'duration_sec' => $p->duration_sec,
+                'status' => $p->status,
+                'error_message' => $p->error_message,
+                'clips_count' => (int) $p->clips_count,
+                'created_at' => $p->created_at?->toISOString(),
+            ]),
+        ]);
+    }
+
+    public function destroy(Project $project): JsonResponse
+    {
+        $project->delete();
+
+        return response()->json([
+            'message' => 'Proyek berhasil dihapus.',
+        ]);
+    }
+
     public function store(StoreProjectRequest $request): JsonResponse
     {
         $project = Project::create([

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { createProject, getProject, uploadProject } from './api'
+import { createProject, getProject, uploadProject, getProjects, deleteProject } from './api'
 import StatusTracker from './components/StatusTracker'
 import ClipList from './components/ClipList'
 import Editor from './components/Editor'
@@ -35,6 +35,31 @@ function formatDuration(sec) {
   const s = total % 60
   const pad = (n) => String(n).padStart(2, '0')
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
+}
+
+function parseUrlRoute() {
+  const path = window.location.pathname
+  const matchClip = path.match(/^\/projects\/(\d+)\/clips\/(\d+)$/)
+  if (matchClip) {
+    return { projectId: Number(matchClip[1]), clipId: Number(matchClip[2]) }
+  }
+  const matchProject = path.match(/^\/projects\/(\d+)$/)
+  if (matchProject) {
+    return { projectId: Number(matchProject[1]), clipId: null }
+  }
+  return { projectId: null, clipId: null }
+}
+
+function setUrlRoute(projectId, clipId) {
+  let target = '/'
+  if (projectId != null && clipId != null) {
+    target = `/projects/${projectId}/clips/${clipId}`
+  } else if (projectId != null) {
+    target = `/projects/${projectId}`
+  }
+  if (window.location.pathname !== target) {
+    window.history.pushState({}, '', target)
+  }
 }
 
 function LinkIcon() {
@@ -111,14 +136,75 @@ export default function App() {
   const [fatalError, setFatalError] = useState(null)
   const [project, setProject] = useState(null)
   const [editingClipId, setEditingClipId] = useState(null)
+  const [historyList, setHistoryList] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+
   const videoInputRef = useRef(null)
   const subtitleInputRef = useRef(null)
+
+  const loadHistory = async () => {
+    setHistoryLoading(true)
+    try {
+      const data = await getProjects()
+      setHistoryList(data || [])
+    } catch {
+      /* ignore */
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  // Initial load: parse route and history
+  useEffect(() => {
+    loadHistory()
+
+    const route = parseUrlRoute()
+    if (route.projectId) {
+      getProject(route.projectId)
+        .then((data) => {
+          setProject(data)
+          if (route.clipId) setEditingClipId(route.clipId)
+        })
+        .catch(() => {
+          setUrlRoute(null, null)
+        })
+    }
+
+    const onPopState = () => {
+      const current = parseUrlRoute()
+      if (current.projectId) {
+        getProject(current.projectId)
+          .then((data) => {
+            setProject(data)
+            setEditingClipId(current.clipId)
+          })
+          .catch(() => {
+            setProject(null)
+            setEditingClipId(null)
+          })
+      } else {
+        setProject(null)
+        setEditingClipId(null)
+      }
+    }
+
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  // Sync URL when state changes
+  useEffect(() => {
+    if (project) {
+      setUrlRoute(project.id, editingClipId)
+    } else {
+      setUrlRoute(null, null)
+    }
+  }, [project?.id, editingClipId])
 
   const anyPreparing = project?.clips?.some((c) => c.prepare_status === 'preparing') ?? false
 
   useEffect(() => {
     if (!project) return
-    if (editingClipId != null) return
     if (!shouldKeepPolling(project)) return
 
     let cancelled = false
@@ -132,6 +218,8 @@ export default function App() {
         setProject(data)
         if (shouldKeepPolling(data)) {
           timer = setTimeout(tick, 2000)
+        } else {
+          loadHistory()
         }
       } catch (err) {
         if (!cancelled) setFatalError(err?.message || 'Gagal memuat status.')
@@ -143,7 +231,7 @@ export default function App() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [project?.id, project?.status, anyPreparing, editingClipId])
+  }, [project?.id, project?.status, anyPreparing])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -161,6 +249,7 @@ export default function App() {
     try {
       const data = await createProject(value)
       setProject(data)
+      loadHistory()
     } catch (err) {
       setFieldError(err?.body?.errors?.youtube_url?.[0] || err?.message || 'Gagal memulai analisis.')
     } finally {
@@ -187,6 +276,7 @@ export default function App() {
     try {
       const data = await uploadProject({ videoFile, subtitleFile })
       setProject(data)
+      loadHistory()
     } catch (err) {
       const serverErrs = err?.body?.errors || {}
       if (Object.keys(serverErrs).length > 0) {
@@ -203,6 +293,20 @@ export default function App() {
     }
   }
 
+  const handleDeleteHistory = async (e, id) => {
+    e.stopPropagation()
+    if (!confirm('Yakin ingin menghapus riwayat proyek ini?')) return
+    try {
+      await deleteProject(id)
+      if (project?.id === id) {
+        reset()
+      }
+      loadHistory()
+    } catch {
+      alert('Gagal menghapus proyek.')
+    }
+  }
+
   const reset = () => {
     setProject(null)
     setUrl('')
@@ -215,6 +319,7 @@ export default function App() {
     setFatalError(null)
     setCreating(false)
     setEditingClipId(null)
+    setUrlRoute(null, null)
   }
 
   const editingClip =
@@ -250,12 +355,16 @@ export default function App() {
   return (
     <div className="relative flex min-h-screen flex-col">
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-5 sm:px-8">
-        <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={reset}
+          className="flex items-center gap-2.5 text-left focus:outline-none"
+        >
           <span className="grid h-7 w-7 place-items-center rounded-md border border-accent/50 bg-accent/10 font-mono text-[11px] font-medium text-accent">
             X7
           </span>
           <span className="font-display text-[15px] font-semibold tracking-tight text-ink">Clipper</span>
-        </div>
+        </button>
         <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-faint">Lokal · Beta</span>
       </header>
 
@@ -340,70 +449,47 @@ export default function App() {
                   onSubmit={handleSubmit}
                   noValidate
                 >
-                  <div className="relative overflow-hidden rounded-2xl border border-line bg-panel/70 p-5 backdrop-blur-sm sm:p-7">
-                    <div
-                      className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-transparent"
-                      aria-hidden="true"
-                    />
-                    <label
-                      htmlFor="youtube-url"
-                      className="block font-mono text-[11px] uppercase tracking-[0.16em] text-muted"
-                    >
-                      Tautan video YouTube
-                    </label>
-
-                    <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
+                  <div className="relative rounded-2xl border border-line bg-panel/70 p-2 shadow-2xl backdrop-blur-sm sm:p-2.5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <div className="relative flex-1">
-                        <span
-                          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-faint"
-                          aria-hidden="true"
-                        >
-                          <LinkIcon />
-                        </span>
+                        <label htmlFor="yt-url" className="sr-only">
+                          Tautan video YouTube
+                        </label>
                         <input
-                          id="youtube-url"
+                          id="yt-url"
                           type="url"
-                          inputMode="url"
-                          autoComplete="off"
-                          spellCheck="false"
                           value={url}
                           onChange={(e) => {
                             setUrl(e.target.value)
                             if (fieldError) setFieldError(null)
                           }}
-                          placeholder="https://youtu.be/…"
-                          aria-invalid={fieldError ? 'true' : undefined}
-                          aria-describedby={fieldError ? 'url-error' : 'url-hint'}
-                          className={`h-12 w-full rounded-lg border bg-void/60 pl-10 pr-3 text-[15px] text-ink outline-none transition placeholder:text-faint focus:border-accent ${
-                            fieldError ? 'border-fail' : 'border-line'
-                          }`}
+                          placeholder="https://www.youtube.com/watch?v=..."
+                          autoComplete="off"
+                          spellCheck="false"
+                          disabled={creating}
+                          className="h-11 w-full rounded-lg bg-void/60 px-4 font-mono text-sm text-ink placeholder:text-faint focus:outline-none focus:ring-1 focus:ring-accent"
                         />
                       </div>
-                      <button type="submit" disabled={creating} className={`${BTN_PRIMARY} w-full sm:w-auto`}>
+                      <button type="submit" disabled={creating} className={BTN_PRIMARY}>
                         {creating ? (
                           <>
                             <span
                               className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-void/40 border-t-void motion-reduce:animate-none"
                               aria-hidden="true"
                             />
-                            Memulai…
+                            Memproses…
                           </>
                         ) : (
-                          'Mulai analisis'
+                          'Analisis video'
                         )}
                       </button>
                     </div>
-
-                    {fieldError ? (
-                      <p id="url-error" role="alert" className="mt-2.5 text-sm text-fail">
-                        {fieldError}
-                      </p>
-                    ) : (
-                      <p id="url-hint" className="mt-2.5 text-xs text-faint">
-                        Tempel tautan lalu tekan Enter.
-                      </p>
-                    )}
                   </div>
+                  {fieldError && (
+                    <p role="alert" className="mt-2.5 px-2 font-mono text-xs text-fail">
+                      {fieldError}
+                    </p>
+                  )}
                 </form>
               ) : (
                 <form
@@ -413,42 +499,24 @@ export default function App() {
                   onSubmit={handleUploadSubmit}
                   noValidate
                 >
-                  <div className="relative overflow-hidden rounded-2xl border border-line bg-panel/70 p-5 backdrop-blur-sm sm:p-7">
-                    <div
-                      className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-transparent"
-                      aria-hidden="true"
-                    />
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {/* Video input */}
+                  <div className="rounded-2xl border border-line bg-panel/70 p-4 shadow-2xl backdrop-blur-sm sm:p-5">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div>
-                        <label
-                          htmlFor="video-file-input"
-                          className="block font-mono text-[11px] uppercase tracking-[0.16em] text-muted"
-                        >
-                          Berkas Video <span className="text-accent">*</span>
-                        </label>
-                        <p className="mt-1 text-xs text-faint">Format MP4, MOV, atau M4V</p>
-
+                        <span className="mb-2 block font-mono text-[11px] uppercase tracking-[0.16em] text-faint">
+                          1. Berkas Video (MP4 / MOV / M4V)
+                        </span>
                         <input
                           ref={videoInputRef}
-                          id="video-file-input"
+                          id="local-video-input"
                           type="file"
-                          accept=".mp4,.mov,.m4v"
+                          accept=".mp4,.mov,.m4v,video/mp4,video/quicktime,video/x-m4v"
                           onChange={(e) => {
-                            const f = e.target.files?.[0] || null
-                            setVideoFile(f)
-                            if (uploadErrors.video) {
-                              setUploadErrors((prev) => {
-                                const next = { ...prev }
-                                delete next.video
-                                return next
-                              })
-                            }
+                            setVideoFile(e.target.files?.[0] || null)
+                            if (uploadErrors.video) setUploadErrors((p) => ({ ...p, video: null }))
                           }}
+                          disabled={creating}
                           className="sr-only"
                         />
-
                         <div
                           onClick={() => videoInputRef.current?.click()}
                           onKeyDown={(e) => {
@@ -457,25 +525,22 @@ export default function App() {
                               videoInputRef.current?.click()
                             }
                           }}
-                          tabIndex={0}
                           role="button"
-                          aria-label={videoFile ? `Berkas video dipilih: ${videoFile.name}` : 'Pilih berkas video'}
-                          className={`mt-2.5 flex min-h-[96px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-3 text-center transition hover:border-line-2 hover:bg-panel-2/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                            uploadErrors.video ? 'border-fail bg-fail/5' : videoFile ? 'border-accent/60 bg-accent/5' : 'border-line bg-void/40'
+                          tabIndex={0}
+                          className={`flex min-h-[96px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-3 py-3 text-center transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                            videoFile
+                              ? 'border-accent/60 bg-accent/5'
+                              : 'border-line hover:border-line-2 hover:bg-panel-2'
                           }`}
                         >
-                          <span className={`grid h-8 w-8 place-items-center rounded-lg border ${videoFile ? 'border-accent/40 bg-accent/15 text-accent' : 'border-line bg-panel text-faint'}`}>
-                            <VideoFileIcon />
+                          <VideoFileIcon />
+                          <span className="mt-2 line-clamp-1 max-w-[200px] text-xs font-medium text-ink">
+                            {videoFile ? videoFile.name : 'Pilih berkas video'}
                           </span>
-                          {videoFile ? (
-                            <span className="mt-2 max-w-[90%] truncate font-mono text-xs font-medium text-ink" title={videoFile.name}>
-                              {videoFile.name}
-                            </span>
-                          ) : (
-                            <span className="mt-2 text-xs text-muted">Klik untuk memilih video</span>
-                          )}
+                          <span className="mt-0.5 text-[10px] text-faint">
+                            {videoFile ? `${(videoFile.size / (1024 * 1024)).toFixed(1)} MB` : 'Maks. 500 MB'}
+                          </span>
                         </div>
-
                         {uploadErrors.video && (
                           <p role="alert" className="mt-2 text-xs text-fail">
                             {uploadErrors.video}
@@ -483,35 +548,22 @@ export default function App() {
                         )}
                       </div>
 
-                      {/* Subtitle input */}
                       <div>
-                        <label
-                          htmlFor="subtitle-file-input"
-                          className="block font-mono text-[11px] uppercase tracking-[0.16em] text-muted"
-                        >
-                          Berkas Subtitle <span className="text-accent">*</span>
-                        </label>
-                        <p className="mt-1 text-xs text-faint">Format VTT atau SRT</p>
-
+                        <span className="mb-2 block font-mono text-[11px] uppercase tracking-[0.16em] text-faint">
+                          2. Berkas Subtitle (VTT / SRT)
+                        </span>
                         <input
                           ref={subtitleInputRef}
-                          id="subtitle-file-input"
+                          id="local-subtitle-input"
                           type="file"
-                          accept=".vtt,.srt"
+                          accept=".vtt,.srt,text/vtt,application/x-subrip"
                           onChange={(e) => {
-                            const f = e.target.files?.[0] || null
-                            setSubtitleFile(f)
-                            if (uploadErrors.subtitle) {
-                              setUploadErrors((prev) => {
-                                const next = { ...prev }
-                                delete next.subtitle
-                                return next
-                              })
-                            }
+                            setSubtitleFile(e.target.files?.[0] || null)
+                            if (uploadErrors.subtitle) setUploadErrors((p) => ({ ...p, subtitle: null }))
                           }}
+                          disabled={creating}
                           className="sr-only"
                         />
-
                         <div
                           onClick={() => subtitleInputRef.current?.click()}
                           onKeyDown={(e) => {
@@ -520,25 +572,22 @@ export default function App() {
                               subtitleInputRef.current?.click()
                             }
                           }}
-                          tabIndex={0}
                           role="button"
-                          aria-label={subtitleFile ? `Berkas subtitle dipilih: ${subtitleFile.name}` : 'Pilih berkas subtitle'}
-                          className={`mt-2.5 flex min-h-[96px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-3 text-center transition hover:border-line-2 hover:bg-panel-2/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                            uploadErrors.subtitle ? 'border-fail bg-fail/5' : subtitleFile ? 'border-accent/60 bg-accent/5' : 'border-line bg-void/40'
+                          tabIndex={0}
+                          className={`flex min-h-[96px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-3 py-3 text-center transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                            subtitleFile
+                              ? 'border-accent/60 bg-accent/5'
+                              : 'border-line hover:border-line-2 hover:bg-panel-2'
                           }`}
                         >
-                          <span className={`grid h-8 w-8 place-items-center rounded-lg border ${subtitleFile ? 'border-accent/40 bg-accent/15 text-accent' : 'border-line bg-panel text-faint'}`}>
-                            <SubtitleFileIcon />
+                          <SubtitleFileIcon />
+                          <span className="mt-2 line-clamp-1 max-w-[200px] text-xs font-medium text-ink">
+                            {subtitleFile ? subtitleFile.name : 'Pilih berkas subtitle'}
                           </span>
-                          {subtitleFile ? (
-                            <span className="mt-2 max-w-[90%] truncate font-mono text-xs font-medium text-ink" title={subtitleFile.name}>
-                              {subtitleFile.name}
-                            </span>
-                          ) : (
-                            <span className="mt-2 text-xs text-muted">Klik untuk memilih subtitle</span>
-                          )}
+                          <span className="mt-0.5 text-[10px] text-faint">
+                            {subtitleFile ? `${(subtitleFile.size / 1024).toFixed(1)} KB` : 'VTT atau SRT'}
+                          </span>
                         </div>
-
                         {uploadErrors.subtitle && (
                           <p role="alert" className="mt-2 text-xs text-fail">
                             {uploadErrors.subtitle}
@@ -574,6 +623,67 @@ export default function App() {
                   </div>
                 </form>
               )}
+
+              {/* Riwayat Proyek Section */}
+              <div className="mt-8 border-t border-line/60 pt-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-mono text-[11px] uppercase tracking-[0.16em] text-faint">
+                    Riwayat Proyek Terakhir
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={loadHistory}
+                    disabled={historyLoading}
+                    className="font-mono text-[10px] text-muted hover:text-ink"
+                  >
+                    {historyLoading ? 'Memuat…' : 'Segarkan'}
+                  </button>
+                </div>
+
+                {historyList.length === 0 ? (
+                  <p className="mt-3 text-xs text-faint">Belum ada proyek yang pernah diproses.</p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {historyList.map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          getProject(item.id).then(setProject).catch(() => alert('Gagal memuat proyek.'))
+                        }}
+                        className="group flex cursor-pointer items-center justify-between rounded-xl border border-line bg-panel/40 p-3 transition hover:border-accent/40 hover:bg-panel-2"
+                      >
+                        <div className="min-w-0 pr-3">
+                          <p className="truncate text-xs font-medium text-ink group-hover:text-accent">
+                            {item.video_title || item.youtube_url || `Proyek #${item.id}`}
+                          </p>
+                          <div className="mt-1 flex items-center gap-3 font-mono text-[10px] text-faint">
+                            <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                            <span>·</span>
+                            <span>{item.clips_count} klip</span>
+                            <span>·</span>
+                            <span className={item.status === 'ready' ? 'text-ok' : item.status === 'failed' ? 'text-fail' : 'text-accent'}>
+                              {STATUS_LABEL[item.status] || item.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteHistory(e, item.id)}
+                            className="rounded p-1 text-faint hover:text-fail"
+                            title="Hapus proyek"
+                          >
+                            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor">
+                              <path d="M3 4.5h10M6 4.5V3a1 1 0 011-1h2a1 1 0 011 1v1.5M12 4.5v9a1 1 0 01-1 1H5a1 1 0 01-1-1v-9" strokeWidth="1.2" strokeLinecap="round" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <section aria-busy={isActive} className="rise">
