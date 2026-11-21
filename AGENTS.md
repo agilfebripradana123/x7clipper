@@ -127,7 +127,8 @@ web-clipper/
 - [x] Buat migrasi & model database untuk `projects`, `clips`, dan `render_jobs` sesuai `PRD.md`.
 - [x] Buat endpoint `POST /api/projects` (validasi URL -> simpan project -> push job analisis ke Redis).
 - [x] Buat endpoint `GET /api/projects/{id}` (kembalikan status pipeline + daftar `clips`).
-- [ ] Buat endpoint `POST /api/clips/{id}/prepare` (push job smart clipping untuk klip yang dipilih user).
+- [x] Buat endpoint `POST /api/clips/{id}/prepare` (push job smart clipping untuk klip yang dipilih user).
+- [x] Buat endpoint `GET /api/clips/{id}/video` (`response()->file()`, Range/206) + tracking `prepare_status`/`prepare_error`.
 - [ ] Buat endpoint `PATCH /api/clips/{id}/config` (simpan `edit_config_json` dan revisi `subtitle_json`).
 - [ ] Buat endpoint `POST /api/clips/{id}/render` dan `GET /api/render-jobs/{id}` (antrean render final + polling progres).
 - [x] Hubungkan consumer Redis Queue di `worker/` agar mendengarkan job dari Backend dan mengupdate status/progres ke API/DB.
@@ -164,6 +165,10 @@ web-clipper/
 - `2026-11-20`: `consumer.js` wajib `throw` jika SEMUA chunk gagal dianalisis (masuk retry/failed + `error_message`), supaya kegagalan 9router tidak pernah tersamar jadi `status=ready` tanpa klip. `clips=0` hanya sah jika AI benar-benar mengembalikan `"clips": []`.
 - `2026-11-20`: Pool `mysql2` menyetel `charset: 'UTF8MB4_UNICODE_CI'` eksplisit (nama collation, bukan `'utf8mb4'` yang ditolak mysql2) agar judul/caption ber-emoji aman di MariaDB `utf8mb4`.
 - `2026-11-20`: Agent DILARANG menjalankan daemon (`node src/consumer.js`, `php artisan serve`, dll.) via shell tool; user menjalankannya manual di terminal terpisah (Bagian 2 item 7).
+- `2026-11-20`: Persiapan klip dilacak di `clips.prepare_status` (`idle|preparing|ready|failed`) + `prepare_error`. `POST /api/clips/{id}/prepare` idempoten: `ready` + file ada -> 200 tanpa re-clip; `preparing` -> 202 tanpa push; selain itu set `preparing` + push job `{"type":"prepare_clip","clip_id":N}` -> 202; gagal enqueue -> 503 + `failed`.
+- `2026-11-20`: File klip mentah deterministik `storage/raw-clips/clip-<clipId>.mp4` (pass `clipId` ke `clipSegment`) supaya cek idempoten cukup `is_file(raw_clip_path)`. Subtitle klip disimpan di `clips.subtitle_json` hasil `shiftSubtitles` (mulai `00:00`).
+- `2026-11-20`: `GET /api/clips/{id}/video` memakai `response()->file()`; Symfony `BinaryFileResponse` sudah menangani `Range` -> 206 (`Content-Range`, `Accept-Ranges: bytes`) tanpa kode manual.
+- `2026-11-20`: `phpunit.xml` memakai `REDIS_DB=15` agar test tidak berebut list `x7:jobs` dengan consumer development di DB 0 (sebelumnya job test bisa langsung dimakan consumer).
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
@@ -171,7 +176,7 @@ web-clipper/
 ## 6. Status Terakhir & Handoff Log
 
 - **Fase Aktif:** Fase 3 (Backend API, Database & Redis Queue)
-- **Tugas Terakhir Selesai:** E2E riil 1 URL (`hXOo7FdQVrk`, 1104s) via Laravel -> Redis -> consumer -> 9router -> MariaDB: project `ready` + 4 klip tersimpan. Sekalian fix `ninerouter.js` (parse body teks + fallback SSE) dan guard `consumer.js` (semua chunk gagal -> throw, bukan `ready` + 0 klip). `charset` mysql2 eksplisit `UTF8MB4_UNICODE_CI`.
-- **Tugas Berikutnya:** `POST /api/clips/{id}/prepare` idempoten + kolom `prepare_status`/`prepare_error`, plus `GET /api/clips/{id}/video` (`response()->file()`, dukung Range 206) — Fase 3 Item 4.
-- **File Terakhir Diubah:** `worker/src/{ninerouter,consumer,db}.js`, `worker/test/ninerouter.test.js`, `AGENTS.md`.
-- **Blocker / Catatan:** `npm test` PASS 40/40. Verifikasi E2E: requeue project 8 via `x7:jobs` -> `analyzing` -> `ready` + 4 klip. 9router saat dicek membalas `application/json` normal; kegagalan lama tidak terekam karena log consumer user tidak tersimpan (indikasi kuat: respons 9router gagal parse/HTTP error lalu di-skip diam-diam). Consumer user (PID baru) sudah memakai kode fix.
+- **Tugas Terakhir Selesai:** Fase 3 Item 4 — `POST /api/clips/{id}/prepare` idempoten (`prepare_status`/`prepare_error`), handler worker `prepare_clip` (`clip-<id>.mp4` + `subtitle_json` shifted), dan `GET /api/clips/{id}/video` (Range/206). E2E riil: clip 11 project 8 -> `ready`, file 25.9 MB, `curl Range` -> 206 `bytes 0-1023/25884911`.
+- **Tugas Berikutnya:** `PATCH /api/clips/{id}/config` (simpan `edit_config_json` + revisi `subtitle_json`) — Fase 3 Item 5, lalu render endpoint + `renderer.js`.
+- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/{ClipController,ProjectController}.php`, `backend/routes/api.php`, `backend/app/Models/Clip.php`, `backend/database/migrations/2026_11_20_000004_add_prepare_fields_to_clips_table.php`, `backend/tests/Feature/Api/{ClipPrepareApiTest,ClipVideoApiTest,ProjectShowApiTest}.php`, `backend/phpunit.xml`, `worker/src/{consumer,db}.js`, `worker/test/consumer.test.js`, `AGENTS.md`.
+- **Blocker / Catatan:** `php artisan test` PASS 18/18 (72 assertions), `npm test` PASS 44/44. Consumer user harus restart setelah perubahan worker agar handler `prepare_clip` ter-load. Test backend memakai Redis DB 15; jangan kembalikan ke DB 0 saat consumer development jalan.

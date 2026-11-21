@@ -21,6 +21,8 @@ class Clip extends Model
         'ai_reason',
         'suggested_caption',
         'raw_clip_path',
+        'prepare_status',
+        'prepare_error',
         'subtitle_json',
         'edit_config_json',
     ];

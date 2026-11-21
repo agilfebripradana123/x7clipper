@@ -66,9 +66,51 @@ export async function analyzeProject(job, { db, getMetadata, getTranscript, sele
   }
 }
 
+/**
+ * Job prepare_clip: potong segmen via yt-dlp + FFmpeg, geser subtitle ke 00:00,
+ * simpan raw_clip_path + subtitle_json. Idempoten, tidak pernah throw keluar.
+ */
+export async function prepareClip(job, { db, clipSegment, shiftSubtitles, fileExists, log = () => {} }) {
+  if (!job?.clip_id) return { skipped: true };
+
+  const clip = await db.getClip(job.clip_id);
+  if (!clip) {
+    log(`clip ${job.clip_id} tidak ditemukan, job dibuang`);
+    return { skipped: true };
+  }
+
+  // Idempoten: sudah pernah dipotong dan file masih ada -> cukup tandai ready.
+  if (clip.raw_clip_path && await fileExists(clip.raw_clip_path)) {
+    await db.markClipReady(clip.id, { rawClipPath: clip.raw_clip_path });
+    return { skipped: true };
+  }
+
+  const project = await db.getProject(clip.project_id);
+  if (!project) {
+    log(`project ${clip.project_id} tidak ditemukan, job dibuang`);
+    return { skipped: true };
+  }
+
+  try {
+    await db.markClipPreparing(clip.id);
+    const segmentMap = await db.getProjectTranscript(clip.project_id);
+    const subtitles = shiftSubtitles(Object.values(segmentMap ?? {}), clip.start_sec, clip.end_sec);
+    const { clipPath } = await clipSegment(project.youtube_url, clip.start_sec, clip.end_sec, {
+      clipId: `clip-${clip.id}`,
+    });
+    await db.markClipReady(clip.id, { rawClipPath: clipPath, subtitles });
+    return { clipId: clip.id, clipPath, subtitles: subtitles.length };
+  } catch (error) {
+    try { await db.markClipFailed(clip.id, error.message); } catch { /* DB gagal pun jangan crash consumer */ }
+    log(`prepare clip ${clip.id} gagal: ${error.message}`);
+    return { failed: true, error: error.message };
+  }
+}
+
 /** Dispatch berdasarkan job.type. */
 export async function handleJob(job, deps) {
   if (job?.type === 'analyze_project') return analyzeProject(job, deps);
+  if (job?.type === 'prepare_clip') return prepareClip(job, deps);
   deps.log?.(`tipe job tidak dikenal: ${job?.type}`);
   return { ignored: true };
 }
@@ -86,6 +128,15 @@ async function main() {
   const db = createDb();
   const log = (message) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${message}`);
   const requeue = (job) => redis.lpush(JOB_LIST, JSON.stringify(job));
+
+  const [{ clipSegment }, { shiftSubtitles }, { access }] = await Promise.all([
+    import('./clipper.js'),
+    import('./subtitleShift.js'),
+    import('node:fs/promises'),
+  ]);
+  const fileExists = async (path) => {
+    try { await access(path); return true; } catch { return false; }
+  };
 
   const shutdown = async () => {
     log('shutdown...');
@@ -109,7 +160,7 @@ async function main() {
       continue;
     }
 
-    log(`job ${job.type} project=${job.project_id} attempt=${job.attempt || 1}`);
+    log(`job ${job.type} project=${job.project_id ?? '-'} clip=${job.clip_id ?? '-'} attempt=${job.attempt || 1}`);
     const result = await handleJob(job, {
       db,
       requeue,
@@ -117,6 +168,9 @@ async function main() {
       getMetadata: getVideoMetadata,
       getTranscript: downloadTranscript,
       selectClips: selectClipsFromChunk,
+      clipSegment,
+      shiftSubtitles,
+      fileExists,
     });
     log(`hasil: ${JSON.stringify(result)}`);
   }

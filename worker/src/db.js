@@ -86,6 +86,46 @@ export function createDb({ config = dbConfigFromEnv(), createPool } = {}) {
       await query('UPDATE projects SET transcript_segments_json = ?, updated_at = NOW() WHERE id = ?', [jsonOrNull(segmentMap), id]);
     },
 
+    /** segmentMap dari projects.transcript_segments_json; null jika kosong. */
+    async getProjectTranscript(id) {
+      const rows = await query('SELECT transcript_segments_json FROM projects WHERE id = ?', [id]);
+      const raw = rows[0]?.transcript_segments_json;
+      if (!raw) return null;
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    },
+
+    async getClip(id) {
+      const rows = await query(
+        'SELECT id, project_id, start_sec, end_sec, raw_clip_path, prepare_status FROM clips WHERE id = ?',
+        [id],
+      );
+      const clip = rows[0];
+      if (!clip) return null;
+      return {
+        ...clip,
+        id: Number(clip.id),
+        project_id: Number(clip.project_id),
+        start_sec: Number(clip.start_sec),
+        end_sec: Number(clip.end_sec),
+      };
+    },
+
+    async markClipPreparing(id) {
+      await query("UPDATE clips SET prepare_status = 'preparing', prepare_error = NULL, updated_at = NOW() WHERE id = ?", [id]);
+    },
+
+    /** subtitle_json hanya ditimpa bila `subtitles` diberikan (jalur idempoten aman). */
+    async markClipReady(id, { rawClipPath, subtitles } = {}) {
+      await query(
+        'UPDATE clips SET prepare_status = ?, prepare_error = NULL, raw_clip_path = ?, subtitle_json = COALESCE(?, subtitle_json), updated_at = NOW() WHERE id = ?',
+        ['ready', rawClipPath ?? null, jsonOrNull(subtitles), id],
+      );
+    },
+
+    async markClipFailed(id, message) {
+      await query("UPDATE clips SET prepare_status = 'failed', prepare_error = ?, updated_at = NOW() WHERE id = ?", [message, id]);
+    },
+
     markAnalyzing: setStatus('analyzing'),
     markQueued: setStatus('queued'),
     failProject: setStatus('failed'),

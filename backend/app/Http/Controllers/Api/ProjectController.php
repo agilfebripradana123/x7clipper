@@ -66,6 +66,8 @@ class ProjectController extends Controller
                     'ai_reason' => $clip->ai_reason,
                     'suggested_caption' => $clip->suggested_caption,
                     'raw_clip_path' => $clip->raw_clip_path,
+                    'prepare_status' => $clip->prepare_status,
+                    'prepare_error' => $clip->prepare_error,
                 ])->all(),
             ],
         ]);

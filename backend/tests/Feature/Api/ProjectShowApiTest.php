@@ -52,6 +52,7 @@ class ProjectShowApiTest extends TestCase
             ->assertJsonPath('data.video_title', 'Podcast Uji')
             ->assertJsonPath('data.duration_sec', 3600)
             ->assertJsonPath('data.clips.0.title', 'Klip Skor Tinggi')
+            ->assertJsonPath('data.clips.0.prepare_status', 'idle')
             ->assertJsonPath('data.clips.1.title', 'Klip Skor Rendah');
 
         $this->assertEqualsWithDelta(120.125, $response->json('data.clips.0.start_sec'), 0.001);
