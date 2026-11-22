@@ -1,423 +1,287 @@
-# x7clipper
+# x7clipper — AI Video Clipper & Auto-Editor
 
-Ubah podcast/video YouTube panjang jadi klip pendek siap tayang. Transkrip diekstrak, momen terbaik dipilih AI lewat **9router**, segmen video dipotong parsial, lalu difinalkan lewat web editor.
+Ubah video YouTube atau berkas video panjang menjadi klip video pendek (TikTok, Instagram Reels, YouTube Shorts) siap tayang secara otomatis. Sistem mengekstrak transkrip, menganalisis momen terbaik dengan **Segment-ID Anchoring** via **9router AI Gateway**, memotong video parsial tanpa mengunduh video utuh, menjalankan **Autonomous Auto-Editor Agent** (Vision Framing & Semantic Pacing), lalu menyediakannya di **Web Editor Studio (CapCut-style)** untuk kustomisasi instan sebelum di-render ke resolusi tinggi dengan FFmpeg.
 
 ![PHP](https://img.shields.io/badge/PHP-8.2+-777BB4?logo=php&logoColor=white)
 ![Laravel](https://img.shields.io/badge/Laravel-12-FF2D20?logo=laravel&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)
-![MySQL](https://img.shields.io/badge/MariaDB%2FMySQL-10.4%2B-003545?logo=mariadb&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-4-38B2AC?logo=tailwind-css&logoColor=white)
+![MariaDB](https://img.shields.io/badge/MariaDB%2FMySQL-10.4%2B-003545?logo=mariadb&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-6+-007808?logo=ffmpeg&logoColor=white)
 
-> Status: **MVP dalam pengerjaan**. Pipeline analisis sudah jalan end-to-end (Laravel → Redis → worker Node → 9router → MariaDB). Web editor dan render final belum selesai.
+---
+
+## Fitur Utama
+
+### 1. AI Moment Selection (Anti-Halusinasi Timestamp)
+- **Segment-ID Anchoring:** LLM hanya boleh merujuk ID segmen kalimat yang terverifikasi (`[S12|83] ...`), bukan mengarang detik mentah.
+- **Sliding Window Chunking:** Video < 20 menit dianalisis 1 request; video ≥ 20 menit dipecah per 15 menit dengan overlap 2 menit dan deduplikasi cerdas (overlap > 50% memprioritaskan `viral_score` tertinggi).
+- **Safety Padding:** Otomatis menambahkan buffer `-0.35s` di awal dan `+0.50s` di akhir klip agar kalimat pembicara tidak terpotong.
+
+### 2. Autonomous Auto-Editor Agent
+- **Vision Framing Sub-Agent:** Ekstraksi 3 frame visual (15%, 50%, 85%) dikirim ke `NINEROUTER_VISION_MODEL` untuk mendeteksi layout terbaik (`full_crop` vs `blur_bg`) dan posisi tengah subjek `crop_x` (0.0–1.0) dengan fallback aman.
+- **Semantic Pacing Sub-Agent:** Cue-ID Anchoring (`[C1|0.00-3.45]`) mendeteksi jeda hening dan membuang filler/basa-basi tanpa merusak alur cerita.
+- **Inisialisasi Mulus:** Klip dimulai sebagai 1 segmen utuh `[0..durationSec]` tanpa potongan jump-cut paksa.
+- **Konteks Bebas (Tanpa Batasan Durasi Kaku):** AI memilih klip tuntas sesuai konteks (durasi minimal ≥ 3 detik, tanpa pembatasan kaku 58s/110s).
+
+### 3. Studio Web Video Editor (Gaya CapCut Web)
+- **Interactive Multi-Cut Timeline:**
+  - Toolbar ringkas: Play/Pause (`Space`), Split di playhead (`S`), Hapus/Pulihkan segmen (`Delete`/`Backspace`), Undo (`Ctrl+Z`), indikator total durasi.
+  - Interactive ruler & draggable playhead dengan scrubbing real-time dan tooltip waktu.
+  - Video track dengan *trim handle* kiri/kanan pada setiap segmen aktif, klik untuk seleksi segmen, dan tampilan arsir redup untuk segmen nonaktif (auto-skip saat pemutaran).
+  - Mini subtitle track di bawah video track untuk memandu titik potong di antara jeda kalimat.
+- **Canvas Preview Dinamis:**
+  - Pratinjau langsung 4 rasio aspek (`9:16`, `1:1`, `4:3`, `16:9`).
+  - Mode **Blur Background (`blur_bg`)**: Layer video blur sekunder di belakang (`blur-xl brightness-75`) yang sinkron dengan video utama di tengah.
+  - Mode **Full Crop**: Drag-to-pan langsung pada canvas untuk menggeser posisi horizontal `crop_x`.
+- **Panel Bertab Rapi:**
+  - **Gaya & Hook:** Pemilih Rasio Aspek, mode tata letak, input Hook Banner, pemilih font Hook Banner, dan 3 preset 1-klik (*Hormozi*, *Podcast*, *Breaking*).
+  - **Subtitle:** Pemilih font subtitle, 3 tombol posisi vertikal (Atas/Tengah/Bawah dengan margin aman di bawah banner), slider ukuran font (32–96) dengan 4 preset cepat (Kecil 44, Sedang 64, Besar 78, Jumbo 92), slider sinkronisasi delay (-2.0s s/d +2.0s), dan daftar baris cue yang dapat diedit langsung.
+  - **Export:** Ringkasan spesifikasi render, progress bar polling real-time, tombol unduh `.mp4`, dan panel Rekomendasi Caption Gen Z + 3 hashtag dengan tombol 1-klik Salin Caption & Buat Ulang Caption.
+- **Debounced Auto-Save:** Setiap perubahan disimpan otomatis ke database tanpa tombol simpan manual.
+
+### 4. 6 Pilihan Font Viral Open-Source
+Tersedia 6 font TTF tebal di `storage/fonts/` dan `frontend/public/fonts/` dengan pembaca tabel OpenType `name` di worker dan `@font-face` di browser:
+1. **Montserrat ExtraBold** (`Montserrat-ExtraBold.ttf`)
+2. **Poppins Black** (`Poppins-Black.ttf`)
+3. **Anton** (`Anton-Regular.ttf`)
+4. **Bebas Neue** (`BebasNeue-Regular.ttf`)
+5. **Oswald Bold** (`Oswald-Bold.ttf`)
+6. **Plus Jakarta Sans ExtraBold** (`PlusJakartaSans-ExtraBold.ttf`)
+
+### 5. Final Render Engine FFmpeg
+- **Resolusi Tinggi:** Sumber yt-dlp `bv*[height<=1440]+ba/b` dimuat ke AVC/MP4 cepat, scaling lanczos (`flags=lanczos`), dan `-crf 18`.
+- **Audio Broadcast Broadcast:** Normalisasi audio `-af loudnorm=I=-14:TP=-1.5:LRA=11` (standar media sosial -14 LUFS) pada single clip maupun multi-cut concat.
+- **Burn-In ASS Subtitle:** Penskalaan font dan MarginV proporsional resolusi output, highlight kata viral warna kontras (`#FFE600`), bebas dari artefak tag rusak `12)}`.
+- **Batas Konkurensi & Scheduled Cleanup:** Render dibatasi 1–2 job simultan (`RENDER_CONCURRENCY=1`), dan cleanup otomatis menghapus file sementara > 24 jam.
+
+### 6. Riwayat Proyek & URL State Persistence
+- Riwayat 20 proyek terbaru dengan badge status, jumlah klip, tombol buka, dan tombol hapus cascade.
+- URL routing sinkron (`/projects/:id` dan `/projects/:id/clips/:id`) sehingga me-refresh halaman (F5) tidak menghilangkan state editor dan polling otomatis dilanjutkan (*auto-resume*).
+- Fallback upload video lokal MP4/MOV + subtitle VTT/SRT jika IP server terkena batasan/blokir YouTube.
 
 ---
 
-## Kenapa proyek ini
+## Arsitektur Sistem
 
-Mencari potongan 30–75 detik yang menarik dari video 60–120 menit itu manual, lambat, dan boros bandwidth kalau harus mengunduh video penuh dulu.
-
-x7clipper menyelesaikan tiga masalah itu sekaligus:
-
-- **AI memilih momen, bukan menebak timestamp.** LLM hanya boleh merujuk `segment_id` dari transkrip yang sudah dinormalisasi (`[S12|83] ...`). Worker yang memetakan ID ke detik presisi.
-- **Video panjang dipecah cerdas.** < 20 menit dikirim utuh; ≥ 20 menit dipecah per 15 menit dengan overlap 2 menit, lalu hasilnya dideduplikasi.
-- **Tidak ada unduhan video penuh.** Segmen diambil on-demand via `yt-dlp --download-sections "*start-end"`, lalu keyframe dirapikan FFmpeg supaya tidak freeze di browser.
-
----
-
-## Arsitektur
-
-```mermaid
-flowchart LR
-    FE[Frontend / cURL] -->|POST /api/projects| API[Laravel API]
-    API -->|LPUSH x7:jobs| R[(Redis)]
-    API --> DB[(MariaDB / MySQL)]
-
-    W[Worker Node.js<br/>consumer] -->|BRPOP x7:jobs| R
-    W -->|metadata + subtitle| YT[YouTube / yt-dlp]
-    W -->|chat/completions| AI[9router]
-    W -->|UPDATE projects<br/>INSERT clips| DB
-
-    W -->|yt-dlp download-sections| FF[FFmpeg / ffprobe]
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                   Frontend (React + Vite)                   │
+│   Canvas Preview, CapCut Timeline, Tab Panels, URL Routing  │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ HTTP REST API
+┌──────────────────────────────▼──────────────────────────────┐
+│                  Backend (Laravel 12 API)                   │
+│     Validasi, Database Models, Dispatcher Redis Queue       │
+└──────────────┬──────────────────────────────┬───────────────┘
+               │                              │ LPUSH (x7:jobs)
+               ▼                              ▼
+┌──────────────────────────────┐ ┌────────────────────────────┐
+│      MariaDB / MySQL         │ │       Redis Server         │
+│  projects, clips, render_jobs│ │  Queue: "x7:jobs"          │
+└──────────────▲───────────────┘ └────────────┬───────────────┘
+               │                              │ BRPOP
+┌──────────────┴──────────────────────────────▼───────────────┐
+│                    Worker (Node.js LTS)                     │
+│  - yt-dlp & FFmpeg smart clipper (1440p, loudnorm, lanczos) │
+│  - 9router AI Gateway (Analisis, Caption Gen Z, Vision)     │
+│  - Autonomous Auto-Editor Agent (Vision Framing, Pacing)    │
+│  - ASS Subtitle Generator & Final Render Engine             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-| Komponen | Tanggung jawab |
-|---|---|
-| `backend/` | REST API, validasi URL, migrasi & model, enqueue job ke Redis |
-| `worker/` | `yt-dlp`, parser transkrip, chunker, client 9router, validator, DB writer |
-| `frontend/` | React + Vite + Tailwind (belum diimplementasi; masih placeholder) |
-| `storage/` | `tmp/`, `transcripts/`, `raw-clips/`, `exports/` (di-gitignore) |
-
-### Alur analisis
-
-1. `POST /api/projects` menyimpan `projects` berstatus `queued`, lalu `LPUSH` job JSON ke list Redis `x7:jobs`.
-2. Consumer `BRPOP` job `analyze_project` dan mengambil metadata + subtitle (`id`/`en`) via `yt-dlp`.
-3. Transkrip dipadatkan menjadi segmen 6–10 detik ber-ID, disimpan di `transcript_segments_json`.
-4. Segmen di-chunk, tiap chunk dikirim ke 9router (`temperature 0.2`, `response_format: json_object`).
-5. Output AI divalidasi: ID harus ada di `segmentMap`, durasi 15–110 detik, padding `-0.35s` / `+0.50s`.
-6. Klip yang tumpang tindih > 50% dideduplikasi (simpan `viral_score` tertinggi).
-7. Insert `clips` + update `projects.status='ready'` dalam satu transaksi.
-8. Job gagal -> retry sampai 3 attempt -> `failed` + `error_message`.
-
 ---
 
-## Stack
-
-| Layer | Teknologi |
-|---|---|
-| API | Laravel 12, PHP 8.2+ |
-| Database | MariaDB 10.4+ / MySQL 8 (`utf8mb4`) |
-| Queue broker | Redis (list mentah `x7:jobs`, bukan queue Laravel) |
-| Media worker | Node.js 20+, `mysql2`, `ioredis`, `zod` |
-| Media tools | `yt-dlp`, `ffmpeg`, `ffprobe` |
-| AI gateway | 9router (OpenAI-compatible `/v1/chat/completions`) |
-| Frontend | React + Vite + Tailwind (rencana) |
-
----
-
-## Struktur repo
+## Struktur Folder
 
 ```text
 x7clipper/
-├── backend/                 # Laravel API
-│   ├── app/Http/Controllers/Api/ProjectController.php
-│   ├── app/Support/JobQueue.php
-│   ├── app/Models/{Project,Clip,RenderJob}.php
-│   └── database/migrations/
-├── worker/                  # Node.js media & AI worker
+├── backend/                   # REST API Laravel 12
+│   ├── app/Http/Controllers/Api/  # ProjectController, ClipController, RenderJobController
+│   ├── app/Models/            # Project, Clip, RenderJob
+│   ├── routes/api.php         # Rute API publik
+│   └── tests/Feature/Api/     # Feature tests PHPUnit (41 tests)
+├── worker/                    # Media processing & AI worker Node.js
 │   ├── src/
-│   │   ├── consumer.js      # BRPOP + orkestrasi pipeline
-│   │   ├── youtube.js       # metadata & subtitle via yt-dlp
-│   │   ├── transcript.js    # VTT/SRT -> segmen ber-ID
-│   │   ├── chunker.js       # sliding window 15 menit
-│   │   ├── ninerouter.js    # client LLM + parser JSON/SSE
-│   │   ├── validator.js     # grounding ID, durasi, padding, dedupe
-│   │   ├── clipper.js       # potong segmen + re-encode
-│   │   ├── subtitleShift.js # geser subtitle ke 00:00 (SRT/ASS)
-│   │   ├── db.js            # satu-satunya modul yang menyentuh MySQL
-│   │   └── env.js
-│   ├── scripts/{healthcheck,test-analyze}.js
-│   └── test/                # node:test (40 test)
-├── frontend/                # placeholder
-├── storage/                 # runtime files (gitignored)
-├── docs/progress.md
-├── PRD.md                   # spesifikasi produk
-├── AGENTS.md                # aturan arsitektur & handoff agent
-└── .env.example             # env root, dipakai worker
+│   │   ├── consumer.js        # Redis queue runner (analyze, prepare, render)
+│   │   ├── clipper.js         # yt-dlp download sections + FFmpeg re-encode
+│   │   ├── renderer.js        # Multi-cut, crop/blur filter, burn-in ASS, loudnorm
+│   │   ├── fonts.js           # OpenType name reader & 6 font mapping
+│   │   ├── subtitleShift.js   # Lead compensation, sanitasi ASS, split viral
+│   │   ├── ninerouter.js      # OpenAI-compatible client (chat & caption)
+│   │   ├── validator.js       # Zod schema validation & deduplikasi
+│   │   ├── agents/
+│   │   │   ├── perception.js      # Frame extraction (15%, 50%, 85%) & Cue-ID
+│   │   │   ├── visionFramer.js    # Sub-agent layout & crop_x via Vision AI
+│   │   │   ├── semanticPacer.js   # Sub-agent cut semantik & pacing
+│   │   │   └── autoEditorAgent.js # Orchestrator Auto-Editor
+│   │   └── db.js              # Database connection & transactional updates
+│   ├── scripts/               # healthcheck.js, cleanup.js
+│   └── test/                  # Unit tests node:test (87 tests)
+├── frontend/                  # Web Video Editor React + Vite + Tailwind
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Editor.jsx     # Studio Layout Video Editor
+│   │   │   ├── ClipList.jsx   # Daftar rekomendasi klip
+│   │   │   └── StatusTracker.jsx # Visual pipeline tracker
+│   │   ├── App.jsx            # Routing, history, dan upload form
+│   │   └── api.js             # HTTP API client
+│   └── public/fonts/          # Bundle 6 file font TTF
+├── storage/                   # Runtime directories (gitignored)
+│   ├── fonts/                 # Shared 6 font TTF
+│   ├── raw-clips/             # Video potongan parsial
+│   ├── transcripts/           # Cache transkrip subtitle
+│   ├── tmp/                   # File temp download & ASS
+│   ├── uploads/               # Upload video lokal
+│   └── exports/               # Video final hasil render
+├── PRD.md                     # Dokumen spesifikasi produk
+├── AGENTS.md                  # Panduan coding agent & ADR
+└── docs/                      # progress.md, RUNNING.md
 ```
 
 ---
 
-## Prasyarat
+## Konfigurasi Lingkungan (`.env`)
 
-- PHP **8.2+** + Composer
-- Node.js **20+** (dikembangkan di Node 24)
-- MariaDB **10.4+** / MySQL **8**
-- Redis **7** di `127.0.0.1:6379`
-- `yt-dlp`, `ffmpeg`, `ffprobe` ada di `PATH`
-- Akun/endpoint **9router** dengan API key + model ID
+Salin `.env.example` ke `.env` di root proyek:
 
-Verifikasi binary:
+```env
+# --- 9router (AI Gateway) ---
+NINEROUTER_BASE_URL=http://localhost:20128/v1
+NINEROUTER_API_KEY=your-9router-api-key
+NINEROUTER_MODEL=bansossss
+# Opsional: model khusus vision (otomatis fallback ke NINEROUTER_MODEL jika kosong)
+NINEROUTER_VISION_MODEL=oc/mimo-v2.6-flash-free
 
-```bash
-yt-dlp --version
-ffmpeg -version
-ffprobe -version
-```
+# --- Redis (Queue Broker) ---
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_PASSWORD=
 
----
-
-## Setup
-
-### 1. Clone & dependency
-
-```bash
-git clone https://github.com/agilfebripradana123/x7clipper.git
-cd x7clipper
-
-composer --working-dir=backend install
-npm --prefix worker install
-```
-
-### 2. Env backend (Laravel)
-
-```bash
-cp backend/.env.example backend/.env
-php backend/artisan key:generate
-```
-
-Sesuaikan koneksi DB di `backend/.env`:
-
-```dotenv
-DB_CONNECTION=mysql
+# --- Database (MariaDB / MySQL) ---
 DB_HOST=127.0.0.1
-DB_PORT=3306
+DB_PORT=3307
 DB_DATABASE=x7clip
 DB_USERNAME=root
 DB_PASSWORD=
 
+# --- External Binaries ---
+YTDLP_PATH=yt-dlp
+FFMPEG_PATH=ffmpeg
+FFPROBE_PATH=ffprobe
+
+# --- Storage Paths ---
+STORAGE_TMP=./storage/tmp
+STORAGE_TRANSCRIPTS=./storage/transcripts
+STORAGE_RAW_CLIPS=./storage/raw-clips
+STORAGE_EXPORTS=./storage/exports
+CLEANUP_MAX_AGE_HOURS=24
+
+# --- Render Concurrency ---
+RENDER_CONCURRENCY=1
+```
+
+### Konfigurasi Khusus Backend (`backend/.env`)
+Pastikan konfigurasi Redis di `backend/.env` mengosongkan prefix:
+```dotenv
 REDIS_CLIENT=predis
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 REDIS_PREFIX=
 QUEUE_CONNECTION=redis
 ```
-
-> `predis/predis` dipakai karena ekstensi `phpredis` tidak selalu tersedia. `REDIS_PREFIX` sengaja kosong agar key `x7:jobs` dibaca persis sama oleh Laravel dan Node.
-
-### 3. Env worker (root `.env`)
-
-```bash
-cp .env.example .env
-```
-
-Isi minimal:
-
-```dotenv
-NINEROUTER_BASE_URL=http://127.0.0.1:20128/v1
-NINEROUTER_API_KEY=sk-...
-NINEROUTER_MODEL=your-model-id
-
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=x7clip
-DB_USERNAME=root
-DB_PASSWORD=
-```
-
-### 4. Migrasi
-
-```bash
-php backend/artisan migrate
-```
-
-### 5. Healthcheck
-
-```bash
-cd worker
-npm run healthcheck
-
-# ikut menembak 9router (butuh kredit/kuota)
-# PowerShell
-$env:NINEROUTER_HEALTHCHECK='true'; npm run healthcheck
-```
-
-Output yang diharapkan: `PASS` untuk `yt-dlp`, `ffmpeg`, `ffprobe`, Redis, dan 9router.
+> **Penting:** `REDIS_PREFIX=` wajib dikosongkan agar key `x7:jobs` yang di-push oleh Laravel dibaca persis sama oleh worker Node (`BRPOP x7:jobs`).
 
 ---
 
-## Menjalankan
+## Menjalankan 4 Komponen Lokal
 
-Panduan lengkap (prasyarat, env, urutan start, troubleshooting): **[`docs/RUNNING.md`](docs/RUNNING.md)**.
+Untuk menjalankan sistem secara lengkap, buka terminal terpisah untuk setiap komponen:
 
-Butuh **dua terminal terpisah**. Jangan jalankan daemon dari proses lain/agent.
-
+### 1. Database & Redis Server
+Pastikan MariaDB/MySQL (misal XAMPP port 3307 atau 3306) dan Redis Server (port 6379) sudah berjalan.
 ```bash
-# Terminal 1 — API
-php backend/artisan serve --host=127.0.0.1 --port=8000
+redis-cli ping
+# Response: PONG
 ```
 
+### 2. Backend API (Laravel)
 ```bash
-# Terminal 2 — worker
+cd backend
+composer install
+php artisan migrate
+php artisan serve --port=8000
+# Berjalan di: http://127.0.0.1:8000
+```
+
+### 3. Media & AI Worker (Node.js)
+```bash
 cd worker
+npm install
 npm run consumer
-# [11:15:14] consumer siap, BRPOP x7:jobs
+# Berjalan mendengarkan antrean x7:jobs
 ```
 
-Lalu buat project:
-
+### 4. Frontend Web Editor (React + Vite)
 ```bash
-curl -X POST http://127.0.0.1:8000/api/projects \
-  -H "Content-Type: application/json" \
-  -d '{"youtube_url":"https://www.youtube.com/watch?v=hXOo7FdQVrk"}'
+cd frontend
+npm install
+npm run dev
+# Buka di browser: http://localhost:5173
 ```
-
-```json
-{
-  "data": {
-    "id": 8,
-    "youtube_url": "https://www.youtube.com/watch?v=hXOo7FdQVrk",
-    "status": "queued",
-    "created_at": "2026-11-20T11:19:20.000000Z"
-  }
-}
-```
-
-Pantau hasil:
-
-```bash
-curl http://127.0.0.1:8000/api/projects/8
-```
-
-Status bergerak `queued → extracting → analyzing → ready` (atau `failed`).
 
 ---
 
-## API
+## Daftar Endpoint REST API
 
-### `POST /api/projects`
-
-Membuat project dan mengantrekan job analisis.
-
-Body:
-
-| Field | Tipe | Wajib | Catatan |
-|---|---|---|---|
-| `youtube_url` | string | ya | `youtube.com/watch?v=`, `youtu.be/`, `/live/`, `/shorts/`; maks 512 karakter |
-
-Respons `201`:
-
-```json
-{
-  "data": {
-    "id": 8,
-    "youtube_url": "https://youtu.be/hXOo7FdQVrk",
-    "status": "queued",
-    "created_at": "2026-11-20T11:19:20.000000Z"
-  }
-}
-```
-
-Error: `422` bila URL tidak valid, `503` bila gagal enqueue Redis (project ditandai `failed`).
-
-### `GET /api/projects/{id}`
-
-Mengembalikan status pipeline + daftar klip urut `viral_score` menurun.
-
-```json
-{
-  "data": {
-    "id": 8,
-    "youtube_url": "https://youtu.be/hXOo7FdQVrk",
-    "video_title": "Kenapa Kamu Sulit Akur dengan Orang Tua",
-    "duration_sec": 1104,
-    "status": "ready",
-    "error_message": null,
-    "created_at": "2026-11-20T11:19:20.000000Z",
-    "clips": [
-      {
-        "id": 5,
-        "title": "Takut jadi bapak buruk kayak bapak sendiri",
-        "start_sec": 749.479,
-        "end_sec": 823.29,
-        "viral_score": 92,
-        "hook_type": "emotional",
-        "ai_reason": "...",
-        "suggested_caption": "...",
-        "raw_clip_path": null
-      }
-    ]
-  }
-}
-```
-
-Endpoint yang belum ada: `POST /api/clips/{id}/prepare`, `PATCH /api/clips/{id}/config`, `POST /api/clips/{id}/render`, `GET /api/render-jobs/{id}`, `GET /api/clips/{id}/video`.
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/api/projects` | Mengambil 20 proyek terbaru beserta `clips_count` |
+| `POST` | `/api/projects` | Memvalidasi URL YouTube & mengantrekan analisis |
+| `POST` | `/api/projects/upload` | Mengunggah video MP4 lokal + subtitle VTT/SRT |
+| `GET` | `/api/projects/{id}` | Mengambil detail proyek, status pipeline, & daftar klip |
+| `DELETE` | `/api/projects/{id}` | Menghapus proyek beserta seluruh klip & render job-nya |
+| `POST` | `/api/clips/{id}/prepare` | Mengantrekan smart clipping & auto-editor (`force: true` didukung) |
+| `GET` | `/api/clips/{id}/video` | Streaming video potongan klip (mendukung HTTP 206 Range) |
+| `PATCH` | `/api/clips/{id}/config` | Menyimpan `edit_config_json`, `subtitles`, & `suggested_caption` |
+| `POST` | `/api/clips/{id}/caption` | Membuat / meregenerasi rekomendasi caption Gen Z + 3 hashtag |
+| `POST` | `/api/clips/{id}/render` | Mengantrekan render FFmpeg final |
+| `GET` | `/api/render-jobs/{id}` | Mengambil status dan persentase progres render (0–100%) |
+| `GET` | `/api/render-jobs/{id}/download` | Mengunduh file `.mp4` hasil render final |
 
 ---
 
-## Kontrak job queue
+## Menjalankan Pengujian (Testing)
 
-Backend dan worker tidak berbagi kode, hanya list Redis `x7:jobs` berisi JSON:
+Seluruh pengujian unit dan integrasi dapat dijalankan dengan perintah berikut:
 
-```json
-{ "type": "analyze_project", "project_id": 8, "attempt": 1 }
-```
-
-- `attempt` naik maksimal 3. Gagal di attempt 3 -> `projects.status='failed'` + `error_message`.
-- Tipe job lain diabaikan oleh consumer saat ini.
-- `clips: []` hanya sah kalau AI benar-benar mengembalikan `"clips": []`. Kalau **semua** chunk gagal dianalisis, job dianggap gagal, bukan `ready` dengan 0 klip.
-
----
-
-## CLI worker
-
+### 1. Worker Test Suite (Node.js native runner)
 ```bash
 cd worker
-
-# analisis 1 URL tanpa lewat Redis/DB (debug pipeline)
-npm run analyze -- "https://youtu.be/hXOo7FdQVrk"
-
-# cek binary + Redis + 9router
-npm run healthcheck
-
-# test
 npm test
+# Hasil: 87 tests passed (0 fail, 0 skipped)
 ```
 
-`npm run analyze` mencetak ringkasan chunk, klip yang lolos validasi, dan menyimpan hasil mentah ke `storage/tmp/analysis-<id>.json`.
-
----
-
-## Skema database
-
-| Tabel | Kolom penting |
-|---|---|
-| `projects` | `youtube_url`, `video_title`, `duration_sec`, `transcript_segments_json`, `status` (`queued/extracting/analyzing/ready/failed`), `error_message` |
-| `clips` | `project_id`, `title`, `start_sec`, `end_sec`, `viral_score`, `hook_type`, `ai_reason`, `suggested_caption`, `raw_clip_path`, `subtitle_json`, `edit_config_json` |
-| `render_jobs` | `clip_id`, `status` (`queued/rendering/done/failed`), `progress_percent`, `output_url`, `error_message` |
-
-Catatan:
-
-- `clips.start_sec/end_sec` sudah termasuk padding pengaman.
-- `subtitle_json` dan `edit_config_json` disimpan sebagai JSON string di kolom `longText`.
-- Koordinat crop disimpan sebagai rasio `0.0–1.0`, bukan piksel, supaya preview browser dan render FFmpeg identik.
-- Semua kolom teks `utf8mb4`; pool `mysql2` menyetel `charset: 'UTF8MB4_UNICODE_CI'` eksplisit.
-
----
-
-## Testing
-
+### 2. Backend Test Suite (PHPUnit / Pest)
 ```bash
-# worker (node:test)
-cd worker
-npm test
-# tests 40 / pass 40
-
-# backend (phpunit, DB test terpisah)
 cd backend
 php artisan test
+# Hasil: 41 tests passed (189 assertions)
 ```
 
-`backend/phpunit.xml` memakai database terpisah (default `x7clip_test`) supaya `RefreshDatabase` tidak menghapus data development.
+### 3. Frontend Build Verification (Vite)
+```bash
+cd frontend
+npm run build
+# Hasil: ✓ built in ~1.5s (33 modules)
+```
 
----
-
-## Troubleshooting
-
-| Gejala | Penyebab | Solusi |
-|---|---|---|
-| Project `ready` tapi `clips: []` | Semua chunk gagal diparse | Cek log consumer untuk `chunk N gagal, dilewati`; pastikan 9router membalas JSON valid. Kode sekarang menggagalkan job, bukan silent `ready`. |
-| 9router balas SSE walau `stream: false` | Perilaku combo/model tertentu | Worker membaca body sebagai teks, `JSON.parse`, fallback parser SSE — jangan andalkan `content-type`. |
-| `Unknown charset 'utf8mb4'` | `mysql2` butuh nama collation | Pakai `charset: 'UTF8MB4_UNICODE_CI'`. |
-| Emoji/caption error saat insert | Koneksi/kolom bukan utf8mb4 | Pastikan DB & tabel `utf8mb4`, charset pool eksplisit. |
-| Job tidak diproses | Consumer tidak jalan / key Redis beda | Jalankan `npm run consumer`; cek `REDIS_PREFIX=` kosong dan list `x7:jobs`. |
-| `yt-dlp` gagal ambil subtitle | Video tanpa caption `id`/`en` | Pilih video lain atau tambahkan bahasa di `worker/src/youtube.js`. |
-
----
-
-## Roadmap
-
-- [x] **Fase 0** — struktur repo, `.env.example`, healthcheck
-- [x] **Fase 1** — metadata/subtitle, parser segmen, chunker, client 9router, validator, dedupe
-- [x] **Fase 2** — smart clipping parsial + re-encode, subtitle shifting ke `00:00` (JSON/SRT/ASS)
-- [ ] **Fase 3** — API & queue
-  - [x] migrasi & model
-  - [x] `POST /api/projects`
-  - [x] `GET /api/projects/{id}`
-  - [x] consumer Redis + DB writer transaksional
-  - [ ] `POST /api/clips/{id}/prepare` (idempoten, `prepare_status`)
-  - [ ] `GET /api/clips/{id}/video` (Range/206)
-  - [ ] `PATCH /api/clips/{id}/config`
-  - [ ] `POST /api/clips/{id}/render` + `GET /api/render-jobs/{id}`
-- [ ] **Fase 4** — frontend React: input URL, tracker status, daftar klip, web editor (trim, crop `9:16`, subtitle overlay), export
-- [ ] **Fase 5** — render FFmpeg final (trim + crop + burn-in ASS), batas konkurensi, cleanup 24 jam, upload MP4 fallback
-
-Detail spesifikasi: [`PRD.md`](PRD.md). Aturan arsitektur & progres agent: [`AGENTS.md`](AGENTS.md), [`docs/progress.md`](docs/progress.md).
-
----
-
-## Catatan
-
-- Proyek ini private/WIP belum punya lisensi. Jangan distribusikan tanpa izin.
-- `storage/` dan `.env` tidak masuk repo; isi sendiri sesuai contoh.
-- Job analisis berjalan asinkron. Jangan menjalankan `php artisan serve` atau consumer dari dalam skrip otomatis yang memblokir terminal.
+### 4. Maintenance / Scheduled Cleanup
+Untuk membersihkan file sementara berusia > 24 jam:
+```bash
+cd worker
+npm run cleanup
+# Opsi dry-run: npm run cleanup -- --dry-run
+```

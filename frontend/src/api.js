@@ -94,6 +94,11 @@ export function renderClip(clipId) {
   return request(`/clips/${clipId}/render`, { method: 'POST' })
 }
 
+export async function regenerateCaption(clipId) {
+  const res = await request(`/clips/${clipId}/caption`, { method: 'POST' })
+  return res.data
+}
+
 export async function getRenderJob(id) {
   const res = await request(`/render-jobs/${id}`)
   return res.data

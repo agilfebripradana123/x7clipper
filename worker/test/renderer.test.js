@@ -206,6 +206,49 @@ test('renderClip dengan hook_banner bebas artefak 12)} dan aman terhadap karakte
   assert.ok(assText.includes(',8,20,20,340,1'));
 });
 
+test('renderClip membedakan Fontname antara hook_font dan subtitle_font serta escape fontsdir Windows', async () => {
+  const written = [];
+  const oldFont = process.env.SUBTITLE_FONT;
+  delete process.env.SUBTITLE_FONT;
+
+  try {
+    await renderClip({
+      clip: CLIP,
+      renderJobId: 101,
+      config: {
+        trim_start: 0,
+        trim_end: 5,
+        aspect_ratio: '9:16',
+        hook_font: 'anton',
+        subtitle_font: 'poppins',
+        hook_banner: { enabled: true, text: 'BANNER ANTON' },
+        subtitle: { enabled: true, position: 'bottom', font_size: 64, color: '#FFFFFF' },
+      },
+      subtitles: [{ start: 0, end: 2, text: 'SUBTITLE POPPINS' }],
+      outputDir: 'D:\\temp\\exports',
+      tempDir: 'D:\\temp\\tmp',
+      makeDir: async () => {},
+      write: async (path, content) => written.push({ path, content }),
+      remove: async () => {},
+      spawnFn: fakeSpawn({ stdout: ['out_time_ms=5000000'] }),
+    });
+
+    const ass = written[0].content;
+    assert.ok(ass.includes('Style: Default,Poppins Black,64'));
+    assert.ok(ass.includes('Style: Banner,Anton,54'));
+
+    // Verifikasi escaping fontsdir Windows D:\... -> D\:/...
+    const filter = buildFilters({
+      aspectRatio: '9:16',
+      assPath: 'D:\\storage\\tmp\\test.ass',
+      fontsDir: 'D:\\storage\\fonts',
+    });
+    assert.ok(filter.includes("fontsdir='D\\:/storage/fonts'"));
+  } finally {
+    if (oldFont !== undefined) process.env.SUBTITLE_FONT = oldFont;
+  }
+});
+
 test('renderClip tanpa subtitle tidak menulis ASS', async () => {
   const written = [];
 

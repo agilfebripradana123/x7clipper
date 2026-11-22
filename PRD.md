@@ -70,9 +70,11 @@ Sistem mengekstrak transkrip bertimestamp, mengirimkannya ke LLM melalui **9rout
 ### FR-4: Web Video Editor (Studio Layout & AI Auto-Editor)
 - **Multi-Aspect Ratio Canvas:** Pemilih rasio aspek video (`9:16`, `1:1`, `4:3`, `16:9`) dengan adaptasi geometri Canvas Preview secara dinamis.
 - **Full Crop & Blur Background:** Mode `blur_bg` menampilkan background video blur + redup (`gblur=sigma=35,eq=brightness=-0.12` di FFmpeg dan layer video blur di preview browser) dengan video asli utuh di tengah. Mode `full_crop` mendukung pan horizontal `crop_x` (0.0 - 1.0).
+- **6 Pilihan Font Viral & Pemilih Terpisah:** Tersedia 6 font open-source tebal (Montserrat ExtraBold, Poppins Black, Anton, Bebas Neue, Oswald Bold, Plus Jakarta Sans ExtraBold) yang dapat dipilih terpisah untuk `hook_font` (banner) dan `subtitle_font` (takarir), identik 100% antara `@font-face` browser dan `libass` FFmpeg.
 - **Posisi Subtitle Vertikal & Ukuran Font:** Pilihan 3 posisi (Atas/Tengah/Bawah) dengan margin aman otomatis di bawah Hook Banner saat posisi Atas aktif. Kontrol ukuran font `subtitle_font_size` (32 - 96, default 64) dengan preset cepat (Kecil 44, Sedang 64, Besar 78, Jumbo 92) dan skala proporsional presisi preview vs render.
 - **Edit Teks Subtitle per Baris:** Seluruh daftar baris subtitle editable langsung dengan tombol loncat playhead; perubahan teks langsung tercermin di Canvas Preview dan auto-save.
 - **Sync Subtitle Offset:** Slider pengaturan delay (-2.0s s/d +2.0s) untuk menyelaraskan bibir dan teks secara real-time.
+- **Rekomendasi Caption Gen Z + 3 Hashtag:** AI caption generator bahasa Gen Z santai/relatable diakhiri tepat 3 hashtag relevan, dengan panel editable di tab Export, tombol 1-klik Salin Caption, dan tombol Buat Ulang Caption (`POST /api/clips/{id}/caption`).
 - **Interactive CapCut-Style Timeline:**
   - Toolbar ringkas: Play/Pause (`Space`), Split di playhead (`S`), Hapus/Pulihkan segmen (`Delete`/`Backspace`), Undo (`Ctrl+Z`), dan badge durasi final (tanpa batasan durasi kaku, durasi bebas sesuai konteks >= 3s).
   - Interactive ruler & draggable playhead untuk scrubbing halus real-time.

@@ -167,7 +167,8 @@ web-clipper/
 - [x] Modern CapCut-Style Timeline: toolbar ringkas (Play/Pause `Space`, Split `S`, Delete/Restore, Undo `Ctrl+Z`, badge durasi), interactive ruler & draggable playhead, video track dengan drag-to-trim handle kiri/kanan & seleksi segmen aktif/nonaktif, serta mini subtitle track.
 - [x] Sanitasi ASS & Posisi Subtitle: Perbaikan bug artefak `12)}`, sanitasi teks banner/subtitle, pengaturan posisi vertikal (Atas/Tengah/Bawah) dengan MarginV presisi, sinkronisasi delay (kompensasi lead -0.18s + slider `subtitle_offset_sec`), dan pencabutan batasan durasi kaku (bebas berapapun sesuai konteks >= 3s).
 - [x] Multi-Aspect Ratio & Blur Background: Dukungan rasio aspek `9:16`, `1:1`, `4:3`, `16:9` dengan dynamic canvas, mode `blur_bg` (`gblur=sigma=35,eq=brightness=-0.12` di FFmpeg dan video background blur di preview), kontrol ukuran font `subtitle_font_size` (32..96, default 64), dan edit teks subtitle per baris cue secara instan.
-- [x] Verifikasi: PHPUnit 39/39 PASS, worker node test 86/86 PASS, frontend build PASS.
+- [x] 6 Font Viral & Caption Gen Z: Bundle 6 font open-source TTF (Montserrat, Poppins, Anton, Bebas Neue, Oswald, Plus Jakarta Sans), pemilih font terpisah untuk `hook_font` dan `subtitle_font`, normalisasi path Windows `fontsdir`, AI caption generator Gen Z + 3 hashtag dengan endpoint `POST /api/clips/{id}/caption`, dan 1-click copy caption di UI.
+- [x] Verifikasi: PHPUnit 41/41 PASS, worker node test 87/87 PASS, frontend build PASS.
 
 ---
 
@@ -200,19 +201,20 @@ web-clipper/
 - `2026-11-21`: Eliminasi bug artefak `12)}`: banner hook dipindahkan ke `Style: Banner` terpisah tanpa override tag `\pos(...)`. Sanitasi `sanitizeAssText` menghapus kurung kurawal pembuka/penutup dan backslash mentah.
 - `2026-11-21`: Posisi subtitle vertikal didukung (`top`: MarginV=160/340, `middle`: MarginV=0, `bottom`: MarginV=240) dan sinkronisasi delay diperbaiki dengan kompensasi lead `-0.18s` plus slider `subtitle_offset_sec` (`-2s..+2s`). Batasan durasi klip maksimal dicabut; klip utuh sesuai konteks `>= 3s`.
 - `2026-11-21`: Multi-Aspect Ratio (`9:16`, `1:1`, `4:3`, `16:9`) didukung penuh di backend (`ClipController`), renderer FFmpeg (`outputDimensions` & dynamic crop/scale), dan preview canvas frontend. Mode `blur_bg` menerapkan background video blur di preview dan FFmpeg `split=2`, `gblur=sigma=35,eq=brightness=-0.12`, `overlay` di renderer. `subtitle_font_size` (32..96, default 64) diskala proporsional di preview dan output `.ass`, serta cue subtitle baris demi baris dapat diedit langsung.
+- `2026-11-21`: Font viral (6 font open-source TTF) di-bundle di `storage/fonts/` dan `frontend/public/fonts/`, nama keluarga internal dibaca langsung dari tabel OpenType `name`, pemilih font terpisah untuk `hook_font` dan `subtitle_font`, generator caption AI Gen Z + 3 hashtag via `POST /api/clips/{id}/caption`, dan 1-click clipboard copy di UI Web Editor.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 8 (Multi-Aspect Ratio, Blur BG, Ukuran Font & Editable Cues) — Selesai Penuh
+- **Fase Aktif:** Fase 8 (Font Viral Terpisah & Rekomendasi Caption Gen Z) — Selesai Penuh
 - **Tugas Terakhir Selesai:**
-  - Mode Blur Background (`blur_bg`) fungsional penuh di FFmpeg (`gblur=sigma=35,eq=brightness=-0.12` + overlay tengah) dan Live Preview browser (layer background video blur tersinkronisasi).
-  - Pilihan rasio aspek `9:16` (1080x1920), `1:1` (1080x1080), `4:3` (1440x1080), dan `16:9` (1920x1080) di backend, renderer FFmpeg, dan canvas studio editor.
-  - Pengaturan ukuran font `subtitle_font_size` (32..96, default 64) dengan preset Kecil 44, Sedang 64, Besar 78, Jumbo 92 dan penskalaan proporsional presisi.
-  - Baris subtitle per cue dapat diedit langsung di panel editor dengan instant update ke Canvas Preview dan auto-save ke DB.
-  - Verifikasi: PHPUnit 39/39 PASS, worker node test 86/86 PASS, frontend build PASS.
+  - 6 font open-source TTF (Montserrat ExtraBold, Poppins Black, Anton, Bebas Neue, Oswald Bold, Plus Jakarta Sans ExtraBold) tersedia di storage dan frontend public.
+  - Pembaca nama internal OpenType `name` di `worker/src/fonts.js` dan normalisasi escaping Windows `fontsdir` (`D\:/...`).
+  - Pemilih font terpisah untuk `hook_font` (banner) dan `subtitle_font` (takarir) di backend, worker, dan UI editor.
+  - Rekomendasi caption AI bergaya Gen Z Indonesia + 3 hashtag di `ninerouter.js`, endpoint `POST /api/clips/{id}/caption`, panel caption editable di tab Export, dan tombol 1-klik Salin Caption.
+  - Verifikasi: PHPUnit 41/41 PASS, worker node test 87/87 PASS, frontend build PASS.
 - **Tugas Berikutnya:** Semua perbaikan tuntas dan siap digunakan.
-- **File Terakhir Diubah:** `worker/src/renderer.js`, `frontend/src/components/Editor.jsx`, `backend/app/Http/Controllers/Api/ClipController.php`, `backend/tests/Feature/Api/ClipConfigApiTest.php`, `worker/test/renderer.test.js`, `PRD.md`, `AGENTS.md`, `docs/progress.md`.
-- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 39/39 (177 assertions), `npm test` (worker) PASS 86/86, `npm run build` PASS.
+- **File Terakhir Diubah:** `worker/src/{fonts,renderer,subtitleShift,ninerouter,validator}.js`, `frontend/src/{components/Editor.jsx,api.js,index.css}`, `backend/app/Http/Controllers/Api/ClipController.php`, `backend/routes/api.php`, `backend/tests/Feature/Api/ClipCaptionApiTest.php`, `PRD.md`, `AGENTS.md`, `docs/progress.md`.
+- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 41/41 (189 assertions), `npm test` (worker) PASS 87/87, `npm run build` PASS.

@@ -1,5 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getProject, getRenderJob, patchClipConfig, prepareClip, renderClip } from '../api'
+import { getProject, getRenderJob, patchClipConfig, prepareClip, renderClip, regenerateCaption } from '../api'
+
+const FONT_OPTIONS = [
+  { key: 'montserrat', label: 'Montserrat', family: "'Montserrat ExtraBold', 'Montserrat', sans-serif" },
+  { key: 'poppins', label: 'Poppins', family: "'Poppins Black', 'Poppins', sans-serif" },
+  { key: 'anton', label: 'Anton', family: "'Anton', sans-serif" },
+  { key: 'bebas', label: 'Bebas Neue', family: "'Bebas Neue', sans-serif" },
+  { key: 'oswald', label: 'Oswald', family: "'Oswald', sans-serif" },
+  { key: 'jakarta', label: 'Jakarta Sans', family: "'Plus Jakarta Sans ExtraBold', 'Plus Jakarta Sans', sans-serif" },
+]
+
+function getFontFamily(fontKey, fallback = "'Montserrat ExtraBold', sans-serif") {
+  const found = FONT_OPTIONS.find((f) => f.key === fontKey)
+  return found ? found.family : fallback
+}
 
 const round1 = (n) => Math.round(n * 10) / 10
 const round2 = (n) => Math.round(n * 100) / 100
@@ -117,6 +131,45 @@ export default function Editor({ clip, onBack }) {
     }
   })
 
+  const [hookFont, setHookFont] = useState(
+    clip.edit_config_json?.hook_font || 'anton',
+  )
+  const [subtitleFont, setSubtitleFont] = useState(
+    clip.edit_config_json?.subtitle_font || 'montserrat',
+  )
+
+  const [caption, setCaption] = useState(clip.suggested_caption || '')
+  const [captionCopied, setCaptionCopied] = useState(false)
+  const [regeneratingCaption, setRegeneratingCaption] = useState(false)
+
+  const handleRegenerateCaption = async () => {
+    if (regeneratingCaption) return
+    setRegeneratingCaption(true)
+    try {
+      const data = await regenerateCaption(currentClip.id)
+      if (data?.suggested_caption) {
+        setCaption(data.suggested_caption)
+        setCurrentClip((prev) => ({ ...prev, suggested_caption: data.suggested_caption }))
+        setSaveState('saved')
+      }
+    } catch (err) {
+      alert(`Gagal membuat caption: ${err.message}`)
+    } finally {
+      setRegeneratingCaption(false)
+    }
+  }
+
+  const handleCopyCaption = async () => {
+    if (!caption) return
+    try {
+      await navigator.clipboard.writeText(caption)
+      setCaptionCopied(true)
+      setTimeout(() => setCaptionCopied(false), 2000)
+    } catch {
+      alert('Gagal menyalin caption.')
+    }
+  }
+
   const [subtitleFontSize, setSubtitleFontSize] = useState(() => {
     const fs = clip.edit_config_json?.subtitle_font_size ?? clip.edit_config_json?.subtitle?.font_size
     return typeof fs === 'number' ? clamp(Math.round(fs), 32, 96) : 64
@@ -203,6 +256,9 @@ export default function Editor({ clip, onBack }) {
             if (cfg.crop_x != null) setCropX(round3(cfg.crop_x))
             if (cfg.layout_mode) setLayoutMode(cfg.layout_mode === 'blur' ? 'blur_bg' : cfg.layout_mode)
             if (cfg.hook_banner) setHookBanner(cfg.hook_banner)
+            if (cfg.hook_font) setHookFont(cfg.hook_font)
+            if (cfg.subtitle_font) setSubtitleFont(cfg.subtitle_font)
+            if (updated.suggested_caption) setCaption(updated.suggested_caption)
             if (cfg.subtitle_font_size) setSubtitleFontSize(clamp(cfg.subtitle_font_size, 32, 96))
             if (cfg.subtitle) setSubtitle((prev) => ({ ...prev, ...cfg.subtitle }))
             if (Array.isArray(cfg.cuts) && cfg.cuts.length > 0) {
@@ -235,6 +291,8 @@ export default function Editor({ clip, onBack }) {
     if (presetName === 'hormozi') {
       setLayoutMode('full_crop')
       setHookBanner({ enabled: true, text: (hookBanner.text || clip.title || '').toUpperCase() })
+      setHookFont('anton')
+      setSubtitleFont('montserrat')
       setSubtitleFontSize(78)
       setSubtitle({
         enabled: true,
@@ -247,6 +305,8 @@ export default function Editor({ clip, onBack }) {
     } else if (presetName === 'podcast') {
       setLayoutMode('blur_bg')
       setHookBanner({ enabled: true, text: (hookBanner.text || clip.title || '').toUpperCase() })
+      setHookFont('oswald')
+      setSubtitleFont('poppins')
       setSubtitleFontSize(64)
       setSubtitle({
         enabled: true,
@@ -259,6 +319,8 @@ export default function Editor({ clip, onBack }) {
     } else if (presetName === 'breaking') {
       setLayoutMode('full_crop')
       setHookBanner({ enabled: true, text: `BREAKING: ${(hookBanner.text || clip.title || '').toUpperCase()}` })
+      setHookFont('bebas')
+      setSubtitleFont('jakarta')
       setSubtitleFontSize(64)
       setSubtitle({
         enabled: true,
@@ -515,7 +577,7 @@ export default function Editor({ clip, onBack }) {
       handleSave()
     }, 1200)
     return () => clearTimeout(timer)
-  }, [cuts, cropX, layoutMode, hookBanner, subtitle, subtitleFontSize, rows, aspectRatio, saveState])
+  }, [cuts, cropX, layoutMode, hookBanner, hookFont, subtitleFont, caption, subtitle, subtitleFontSize, rows, aspectRatio, saveState])
 
   const handleSave = async () => {
     const errors = validateRows(rows, duration)
@@ -547,6 +609,8 @@ export default function Editor({ clip, onBack }) {
             enabled: hookBanner.enabled,
             text: hookBanner.text.trim(),
           },
+          hook_font: hookFont,
+          subtitle_font: subtitleFont,
           cuts: sortedCuts,
           subtitle_position: subtitle.position,
           subtitle_offset_sec: round2(subtitle.offset_sec ?? 0),
@@ -561,6 +625,7 @@ export default function Editor({ clip, onBack }) {
             offset_sec: round2(subtitle.offset_sec ?? 0),
           },
         },
+        suggested_caption: caption,
         subtitles: sortedSubs,
       })
       setSaveState('saved')
@@ -774,7 +839,7 @@ export default function Editor({ clip, onBack }) {
                 <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
                   <span
                     style={{
-                      fontFamily: "'Montserrat', sans-serif",
+                      fontFamily: getFontFamily(hookFont, "'Anton', sans-serif"),
                       fontWeight: 900,
                       fontSize: clamp(Math.round((stageSize.w / 1080) * 54), 13, 26),
                       color: '#FFFFFF',
@@ -805,7 +870,7 @@ export default function Editor({ clip, onBack }) {
                 >
                   <div
                     style={{
-                      fontFamily: "'Montserrat', sans-serif",
+                      fontFamily: getFontFamily(subtitleFont, "'Montserrat ExtraBold', sans-serif"),
                       fontWeight: 800,
                       fontSize: `${previewFontPx}px`,
                       textAlign: 'center',
@@ -1187,16 +1252,47 @@ export default function Editor({ clip, onBack }) {
                   </label>
                 </div>
                 {hookBanner.enabled && (
-                  <input
-                    type="text"
-                    value={hookBanner.text}
-                    onChange={(e) => {
-                      setHookBanner((prev) => ({ ...prev, text: e.target.value.toUpperCase() }))
-                      setSaveState('idle')
-                    }}
-                    placeholder="BANNER HOOK ATAS..."
-                    className="w-full rounded-lg border border-line bg-void px-3 py-2 text-xs font-bold font-sans text-ink focus:border-accent focus:outline-none"
-                  />
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={hookBanner.text}
+                      onChange={(e) => {
+                        setHookBanner((prev) => ({ ...prev, text: e.target.value.toUpperCase() }))
+                        setSaveState('idle')
+                      }}
+                      placeholder="BANNER HOOK ATAS..."
+                      className="w-full rounded-lg border border-line bg-void px-3 py-2 text-xs font-bold font-sans text-ink focus:border-accent focus:outline-none"
+                    />
+
+                    <div>
+                      <span className="block font-mono text-[10px] text-faint mb-1.5 uppercase tracking-wider">
+                        Font Hook Banner
+                      </span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {FONT_OPTIONS.map((f) => {
+                          const active = hookFont === f.key
+                          return (
+                            <button
+                              key={f.key}
+                              type="button"
+                              onClick={() => {
+                                setHookFont(f.key)
+                                setSaveState('idle')
+                              }}
+                              style={{ fontFamily: f.family }}
+                              className={`rounded py-1.5 px-2 text-center text-xs truncate transition ${
+                                active
+                                  ? 'border border-accent bg-accent/20 text-accent font-bold'
+                                  : 'border border-line bg-void/50 text-muted hover:border-line-2 hover:bg-panel-2'
+                              }`}
+                            >
+                              {f.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -1226,8 +1322,38 @@ export default function Editor({ clip, onBack }) {
 
               {subtitle.enabled && (
                 <>
-                  {/* Posisi Subtitle (Atas, Tengah, Bawah) */}
+                  {/* Pilihan Font Subtitle */}
                   <div>
+                    <span className="block font-mono text-[10px] text-faint mb-1.5 uppercase tracking-wider">
+                      Font Subtitle
+                    </span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {FONT_OPTIONS.map((f) => {
+                        const active = subtitleFont === f.key
+                        return (
+                          <button
+                            key={f.key}
+                            type="button"
+                            onClick={() => {
+                              setSubtitleFont(f.key)
+                              setSaveState('idle')
+                            }}
+                            style={{ fontFamily: f.family }}
+                            className={`rounded py-1.5 px-2 text-center text-xs truncate transition ${
+                              active
+                                ? 'border border-accent bg-accent/20 text-accent font-bold'
+                                : 'border border-line bg-void/50 text-muted hover:border-line-2 hover:bg-panel-2'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Posisi Subtitle (Atas, Tengah, Bawah) */}
+                  <div className="border-t border-line/60 pt-3">
                     <span className="block font-mono text-[10px] text-faint mb-1.5 uppercase tracking-wider">
                       Posisi Subtitle
                     </span>
@@ -1508,6 +1634,48 @@ export default function Editor({ clip, onBack }) {
                   {renderError}
                 </p>
               )}
+
+              {/* Panel Rekomendasi Caption (Gen Z + 3 Hashtag) */}
+              <div className="border-t border-line pt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-mono text-[11px] uppercase tracking-wider text-faint">
+                    Caption Medsos (Gen Z + 3 Hashtags)
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleRegenerateCaption}
+                    disabled={regeneratingCaption}
+                    className="text-[10px] font-mono text-accent hover:underline flex items-center gap-1"
+                  >
+                    {regeneratingCaption ? (
+                      <span className="h-2.5 w-2.5 animate-spin rounded-full border border-accent/40 border-t-accent" />
+                    ) : null}
+                    <span>{regeneratingCaption ? 'Membuat…' : '✨ Buat Ulang'}</span>
+                  </button>
+                </div>
+                <textarea
+                  rows={4}
+                  value={caption}
+                  onChange={(e) => {
+                    setCaption(e.target.value)
+                    setSaveState('idle')
+                  }}
+                  placeholder="Caption media sosial otomatis..."
+                  className="w-full rounded-lg border border-line bg-void px-3 py-2 text-xs font-sans text-ink focus:border-accent focus:outline-none resize-none leading-relaxed"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyCaption}
+                  disabled={!caption}
+                  className={`${BTN_GHOST} w-full mt-2 text-xs font-medium flex items-center justify-center gap-1.5`}
+                >
+                  {captionCopied ? (
+                    <span className="text-ok font-bold">✓ Tersalin ke Clipboard!</span>
+                  ) : (
+                    <span>📋 Salin Caption</span>
+                  )}
+                </button>
+              </div>
             </div>
           )}
         </div>

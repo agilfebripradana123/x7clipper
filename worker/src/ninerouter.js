@@ -13,6 +13,7 @@ ATURAN WAJIB:
    - "hook_banner_text": Judul hook punchy maksimal 6 kata (KAPITAL SEMUA) untuk banner atas video.
    - "recommended_layout": "full_crop" (fokus 1 orang/reaksi tajam) atau "blur_bg" (jika konten lebar/grafik/banyak orang).
    - "highlight_keywords": array 3–8 kata kunci penting dari klip tersebut untuk di-highlight warna kontras.
+6. "suggested_caption": Tulis caption media sosial gaya Gen Z Indonesia yang natural, relatable, punchy, dan santai (ada hook/reaksi pembuka relate, pancingan diskusi/komentar, dan diakhiri TEPAT 3 hashtag relevan).
 
 FORMAT OUTPUT:
 {
@@ -25,7 +26,7 @@ FORMAT OUTPUT:
       "viral_score": 1-100,
       "hook_type": "contrarian | story | actionable_tip | emotional | debate",
       "reason": "Alasan singkat kenapa momen ini menarik dan utuh",
-      "suggested_caption": "Caption singkat media sosial",
+      "suggested_caption": "Caption Gen Z relate + pancingan komen #hashtag1 #hashtag2 #hashtag3",
       "auto_edit": {
         "hook_banner_text": "HOOK PUNCHY MAKSIMAL ENAM KATA",
         "recommended_layout": "full_crop | blur_bg",

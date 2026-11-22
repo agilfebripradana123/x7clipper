@@ -193,12 +193,13 @@ export function subtitleLayout(position = 'bottom', hookBannerEnabled = false) {
 
 /** Serialisasi subtitle ke ASS dasar dengan dukungan highlight kata viral & hook banner bersih. */
 export function toAss(subtitles, {
-  fontName = 'Montserrat',
+  fontName = 'Montserrat ExtraBold',
   fontSize = 42,
   alignment = 2,
   marginV = 240,
   offsetSec = 0,
   bannerText = null,
+  bannerFontName = null,
   bannerDurationSec = 0,
   primaryColour = '&H00FFFFFF',
   highlightColour = '&H0000E6FF', // Kuning terang ASS (&HAABBGGRR)
@@ -208,8 +209,9 @@ export function toAss(subtitles, {
 } = {}) {
   const cleanBanner = bannerText ? sanitizeAssText(bannerText).toUpperCase() : null;
   const bannerMarginV = playResY < playResX ? Math.round((120 * playResY) / 1920) : 120;
+  const bFont = bannerFontName || 'Anton';
   const bannerStyle = cleanBanner
-    ? `Style: Banner,${fontName},54,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,8,40,40,${bannerMarginV},1\n`
+    ? `Style: Banner,${bFont},54,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,8,40,40,${bannerMarginV},1\n`
     : '';
 
   const header = `[Script Info]

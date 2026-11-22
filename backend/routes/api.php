@@ -12,6 +12,7 @@ Route::get('/projects/{project}', [ProjectController::class, 'show']);
 Route::delete('/projects/{project}', [ProjectController::class, 'destroy']);
 Route::patch('/clips/{clip}/config', [ClipController::class, 'updateConfig']);
 Route::post('/clips/{clip}/prepare', [ClipController::class, 'prepare']);
+Route::post('/clips/{clip}/caption', [ClipController::class, 'generateCaption']);
 Route::get('/clips/{clip}/video', [ClipController::class, 'video']);
 Route::post('/clips/{clip}/render', [RenderJobController::class, 'store']);
 Route::get('/render-jobs/{renderJob}', [RenderJobController::class, 'show']);

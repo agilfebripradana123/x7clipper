@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'ninerouter' => [
+        'base_url' => env('NINEROUTER_BASE_URL', 'http://localhost:20128/v1'),
+        'api_key' => env('NINEROUTER_API_KEY'),
+        'model' => env('NINEROUTER_MODEL', 'bansossss'),
+    ],
+
 ];

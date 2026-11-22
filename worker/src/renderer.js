@@ -7,6 +7,7 @@ import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { toAss, assColour, assTime, subtitleLayout, sanitizeAssText } from './subtitleShift.js';
+import { getFontNameFromFile, resolveFontName } from './fonts.js';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const defaultOutputDir = resolve(projectRoot, 'storage/exports');
@@ -274,8 +275,14 @@ export async function renderClip({
         ? config.subtitles
         : subtitles;
 
+    const hookFontKey = config.hook_font || 'anton';
+    const subtitleFontKey = config.subtitle_font || subtitleConfig.font_family || 'montserrat';
+    const hookFontName = await getFontNameFromFile(hookFontKey, defaultFontsDir);
+    const subtitleFontName = await getFontNameFromFile(subtitleFontKey, defaultFontsDir);
+
     const assContent = toAss(useSubtitles ? activeSubtitles : [], {
-      fontName: process.env.SUBTITLE_FONT || 'Montserrat',
+      fontName: process.env.SUBTITLE_FONT || subtitleFontName,
+      bannerFontName: hookFontName,
       fontSize: assFontSize,
       alignment: layout.alignment,
       marginV: layout.marginV,

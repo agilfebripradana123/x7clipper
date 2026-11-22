@@ -356,22 +356,24 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, CSS 32.10 kB / JS 279.13 kB).
 - **Status:** Selesai (Fase 5 tuntas & seluruh MVP Fase 0 s/d 5 selesai!).
 
-## [2026-11-21] AI Auto-Editor, Multi-Aspect Ratio & Subtitle Controls (Fase 8)
-- **Tujuan:** Eliminasi artefak tag ASS `12)}`, sanitasi teks banner/subtitle, penambahan posisi subtitle (Atas/Tengah/Bawah), pencabutan batasan durasi kaku (>= 3s tanpa cap), kompensasi lead delay -0.18s, slider subtitle offset, dukungan multi-aspect ratio (`9:16`, `1:1`, `4:3`, `16:9`), mode blur background dengan layer video blur di preview dan FFmpeg gblur+eq brightness, slider ukuran font `subtitle_font_size` (32..96) dengan preset, serta editable cue text per baris.
+## [2026-11-21] Font Viral Terpisah & Rekomendasi Caption Gen Z (Fase 8)
+- **Tujuan:** 6 font viral open-source TTF, pembaca nama internal OpenType `name`, escaping Windows `fontsdir`, pemilih font terpisah untuk `hook_font` dan `subtitle_font`, AI caption generator Gen Z + 3 hashtag, endpoint `POST /api/clips/{id}/caption`, dan 1-click copy caption di UI Web Editor.
 - **File diubah/ditambah:**
-  - `worker/src/renderer.js` — `outputDimensions` untuk 9:16 (1080x1920), 1:1 (1080x1080), 4:3 (1440x1080), 16:9 (1920x1080); filter `blur_bg` dengan split/scale/gblur/eq/overlay; dynamic crop untuk full_crop; proporsional font size & MarginV; render dengan subtitle yang telah diedit.
-  - `worker/src/subtitleShift.js` — `sanitizeAssText()`, `sanitizeDrawtext()`, `subtitleLayout()` (MarginV 240/0/340/160 proporsional PlayResY), kompensasi lead default -0.18s, `toAss()` dengan `Style: Banner` terpisah tanpa override tag `\pos(...)` yang rusak.
-  - `worker/src/clipper.js` — presisi pemotongan keyframe dengan `-avoid_negative_ts make_zero`.
-  - `worker/src/ninerouter.js` — prompt AI diperbarui untuk memilih segmen tuntas sesuai konteks tanpa batasan durasi kaku.
-  - `worker/src/validator.js` — hapus batasan durasi 58s/110s, validasi minimal `>= 3s`.
-  - `worker/src/agents/semanticPacer.js` — hapus pembatasan cap 58s, pertahankan konteks pembahasan yang utuh.
-  - `backend/app/Http/Controllers/Api/ClipController.php` — validasi `aspect_ratio` ('9:16'|'1:1'|'4:3'|'16:9'), `layout_mode` ('crop'|'blur'|'full_crop'|'blur_bg'), `subtitle_position` ('top'|'middle'|'bottom'), `subtitle_offset_sec` (-2 s/d 2), dan `subtitle_font_size` (32 s/d 96).
-  - `backend/tests/Feature/Api/ClipConfigApiTest.php` — test validasi aspect ratio baru dan subtitle font size.
-  - `frontend/src/components/Editor.jsx` — pemilih Rasio Aspek (9:16, 1:1, 4:3, 16:9) dengan dynamic canvas, mode blur background dengan layer video blur tersinkronisasi, 3 tombol posisi (Atas, Tengah, Bawah), slider font size (32..96) dengan 4 preset cepat (44, 64, 78, 92) dan skala proporsional presisi, slider Sync Subtitle (-2.0s s/d +2.0s) + tombol Reset, hapus peringatan batas 60s di timeline, serta edit teks per baris cue secara instan.
+  - `storage/fonts/` & `frontend/public/fonts/` — bundle 6 font TTF (Montserrat-ExtraBold, Poppins-Black, Anton-Regular, BebasNeue-Regular, Oswald-Bold, PlusJakartaSans-ExtraBold).
+  - `worker/src/fonts.js` — parser tabel OpenType `name` (`readTtfFontName`), map `VIRAL_FONTS`, dan resolver nama keluarga font `getFontNameFromFile`.
+  - `worker/src/renderer.js` — render banner dengan `hook_font` dan subtitle dengan `subtitle_font`, normalisasi path Windows `fontsdir` (`D\:/...`).
+  - `worker/src/subtitleShift.js` — `toAss()` menerima `bannerFontName` dan `fontName` terpisah untuk style banner dan default.
+  - `worker/src/ninerouter.js` & `worker/src/validator.js` — system prompt menghasilkan `suggested_caption` gaya Gen Z Indonesia + 3 hashtag relevan.
+  - `backend/app/Http/Controllers/Api/ClipController.php` — validasi `hook_font` & `subtitle_font`, update `suggested_caption`, dan endpoint `generateCaption()` (`POST /api/clips/{clip}/caption`).
+  - `backend/routes/api.php` — rute `POST /api/clips/{clip}/caption`.
+  - `backend/tests/Feature/Api/ClipCaptionApiTest.php` — feature test generate caption Gen Z + 3 hashtag dan config font.
+  - `frontend/src/index.css` — pendaftaran `@font-face` untuk keenam font TTF.
+  - `frontend/src/components/Editor.jsx` — pemilih font Hook Banner (Tab Gaya & Hook), pemilih font Subtitle (Tab Subtitle), panel Rekomendasi Caption Gen Z + 3 hashtag di Tab Export dengan tombol 1-klik Salin Caption dan Buat Ulang Caption.
+  - `frontend/src/api.js` — client method `regenerateCaption()`.
 - **Hasil uji:**
-  - `php artisan test` — **PASS 39/39 (177 assertions)**.
-  - `npm test` (worker) — **PASS 86/86**.
-  - `npm run build` (frontend) — **PASS** (33 modules, JS 284.71 kB).
+  - `php artisan test` — **PASS 41/41 (189 assertions)**.
+  - `npm test` (worker) — **PASS 87/87**.
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 288.74 kB).
 - **Status:** Selesai (Fase 8 tuntas).
 
 

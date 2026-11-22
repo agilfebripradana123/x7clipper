@@ -67,6 +67,8 @@ class ClipController extends Controller
             'edit_config.subtitle_position' => ['sometimes', Rule::in(['top', 'middle', 'bottom'])],
             'edit_config.subtitle_offset_sec' => ['sometimes', 'numeric', 'between:-2,2'],
             'edit_config.subtitle_font_size' => ['sometimes', 'integer', 'between:32,96'],
+            'edit_config.hook_font' => ['sometimes', Rule::in(['montserrat', 'poppins', 'anton', 'bebas', 'oswald', 'jakarta'])],
+            'edit_config.subtitle_font' => ['sometimes', Rule::in(['montserrat', 'poppins', 'anton', 'bebas', 'oswald', 'jakarta'])],
             'edit_config.cuts' => ['sometimes', 'array'],
             'edit_config.cuts.*.start' => ['required_with:edit_config.cuts', 'numeric', 'min:0'],
             'edit_config.cuts.*.end' => ['required_with:edit_config.cuts', 'numeric', 'min:0'],
@@ -75,6 +77,7 @@ class ClipController extends Controller
             'edit_config.subtitle.position' => ['sometimes', Rule::in(['top', 'middle', 'bottom'])],
             'edit_config.subtitle.font_size' => ['sometimes', 'integer', 'between:8,200'],
             'edit_config.subtitle.color' => ['sometimes', 'string', 'max:32'],
+            'suggested_caption' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'subtitles' => ['sometimes', 'array', 'max:2000'],
             'subtitles.*.start' => ['required', 'numeric', 'min:0'],
             'subtitles.*.end' => ['required', 'numeric', 'min:0'],
@@ -116,18 +119,86 @@ class ClipController extends Controller
             throw ValidationException::withMessages($errors);
         }
 
-        $clip->update([
+        $updateData = [
             'edit_config_json' => $config === [] ? null : $config,
             'subtitle_json' => array_key_exists('subtitles', $validated)
                 ? array_values($validated['subtitles'])
                 : $clip->subtitle_json,
-        ]);
+        ];
+
+        if (array_key_exists('suggested_caption', $validated)) {
+            $updateData['suggested_caption'] = $validated['suggested_caption'];
+        }
+
+        $clip->update($updateData);
 
         return response()->json([
             'data' => [
                 'id' => $clip->id,
                 'edit_config_json' => $clip->edit_config_json,
                 'subtitle_json' => $clip->subtitle_json,
+                'suggested_caption' => $clip->suggested_caption,
+            ],
+        ]);
+    }
+
+    public function generateCaption(Clip $clip): JsonResponse
+    {
+        $transcript = '';
+        if (is_array($clip->subtitle_json)) {
+            $texts = array_column($clip->subtitle_json, 'text');
+            $transcript = implode(' ', array_slice($texts, 0, 30));
+        }
+
+        $caption = null;
+        $baseUrl = config('services.ninerouter.base_url');
+        $apiKey = config('services.ninerouter.api_key');
+        $model = config('services.ninerouter.model');
+
+        if ($baseUrl && $apiKey) {
+            try {
+                $response = \Illuminate\Support\Facades\Http::timeout(30)
+                    ->withToken($apiKey)
+                    ->post(rtrim($baseUrl, '/').'/chat/completions', [
+                        'model' => $model,
+                        'temperature' => 0.7,
+                        'messages' => [
+                            [
+                                'role' => 'system',
+                                'content' => "Kamu adalah Social Media Caption Specialist untuk TikTok, Instagram Reels, dan YouTube Shorts Gen Z Indonesia.\nBuat 1 caption media sosial yang natural, relatable, punchy, ga kaku/baku (gaya Gen Z santai, ada hook/reaksi pembuka yang memancing rasa penasaran, pancingan diskusi di kolom komentar, dan diakhiri TEPAT 3 hashtag relevan).\nContoh format:\n[Reaksi/hook santai relate]\n[1-2 kalimat esensi klip + pancingan komen]\n\n#hashtag1 #hashtag2 #hashtag3\nOutput HANYA teks caption mentah.",
+                            ],
+                            [
+                                'role' => 'user',
+                                'content' => "Judul: {$clip->title}\nTranskrip singkat: {$transcript}",
+                            ],
+                        ],
+                    ]);
+
+                if ($response->successful()) {
+                    $caption = trim($response->json('choices.0.message.content', ''));
+                    $caption = trim($caption, "\"' \t\n\r\0\x0B");
+                }
+            } catch (Throwable) {
+                // Graceful fallback
+            }
+        }
+
+        if (empty($caption)) {
+            $words = array_values(array_filter(explode(' ', (string) preg_replace('/[^A-Za-z0-9 ]/', '', (string) $clip->title))));
+            $tags = array_slice($words, 0, 3);
+            if (count($tags) < 3) {
+                $tags = array_pad($tags, 3, 'fyp');
+            }
+            $hashtags = '#'.implode(' #', array_map('strtolower', $tags));
+            $caption = "Gak nyangka banget bakal gini... 🤯 Menurut kalian gimana nih guys?\n\n{$hashtags}";
+        }
+
+        $clip->update(['suggested_caption' => $caption]);
+
+        return response()->json([
+            'data' => [
+                'id' => $clip->id,
+                'suggested_caption' => $clip->suggested_caption,
             ],
         ]);
     }
