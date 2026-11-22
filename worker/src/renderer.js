@@ -25,9 +25,17 @@ function seconds(value) {
 
 /** Dimensi output; font ASS memakai PlayRes yang sama agar ukuran konsisten. */
 export function outputDimensions(aspectRatio) {
-  return aspectRatio === '9:16'
-    ? { width: 1080, height: 1920 }
-    : { width: 1920, height: 1080 };
+  switch (aspectRatio) {
+    case '1:1':
+      return { width: 1080, height: 1080 };
+    case '4:3':
+      return { width: 1440, height: 1080 };
+    case '16:9':
+      return { width: 1920, height: 1080 };
+    case '9:16':
+    default:
+      return { width: 1080, height: 1920 };
+  }
 }
 
 /** Escape path untuk opsi filter FFmpeg (Windows: `C\:/dir/file.ass`). */
@@ -36,28 +44,31 @@ export function escapeFilterPath(path) {
 }
 
 export function buildFilters({
-  aspectRatio = '16:9',
+  aspectRatio = '9:16',
   cropX = 0,
   layoutMode = 'crop',
   assPath = null,
   fontsDir = defaultFontsDir,
 }) {
-  const isVertical = aspectRatio === '9:16';
   const x = clamp(Number(cropX) || 0, 0, 1);
   const dims = outputDimensions(aspectRatio);
+  const isBlur = layoutMode === 'blur' || layoutMode === 'blur_bg';
 
   let chain;
-  if (!isVertical) {
-    chain = 'scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2';
-  } else if (layoutMode === 'blur') {
-    // Layout Blur: Background blur scale 1080x1920 + foreground sharp video centered
+  if (isBlur) {
     chain = `[0:v]split=2[bg][fg];` +
-      `[bg]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,boxblur=luma_radius=min(h\\,w)/20:luma_power=2[blurred];` +
-      `[fg]scale=1080:-2:flags=lanczos[scaled_fg];` +
-      `[blurred][scaled_fg]overlay=(W-w)/2:(H-h)/2`;
+      `[bg]scale=${dims.width}:${dims.height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${dims.width}:${dims.height},gblur=sigma=35,eq=brightness=-0.12[bg_blur];` +
+      `[fg]scale=${dims.width}:${dims.height}:force_original_aspect_ratio=decrease:flags=lanczos[fg_scaled];` +
+      `[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2`;
+  } else if (aspectRatio === '16:9') {
+    chain = 'scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2';
+  } else if (aspectRatio === '1:1') {
+    chain = `crop=w=ih:h=ih:x='trunc((iw-ih)*${x})':y=0,scale=1080:1080:flags=lanczos`;
+  } else if (aspectRatio === '4:3') {
+    chain = `crop=w='trunc(ih*2/3)*2':h=ih:x='trunc((iw-ih*4/3)*${x})':y=0,scale=1440:1080:flags=lanczos`;
   } else {
-    // Default Full Crop
-    chain = `crop=w='trunc(ih*9/32)*2':h=ih:x='trunc((iw-ih*9/16)*${x})':y=0,scale=${dims.width}:${dims.height}:flags=lanczos`;
+    // Default 9:16
+    chain = `crop=w='trunc(ih*9/32)*2':h=ih:x='trunc((iw-ih*9/16)*${x})':y=0,scale=1080:1920:flags=lanczos`;
   }
 
   if (!assPath) return chain;
@@ -252,12 +263,20 @@ export async function renderClip({
 
   if (assPath) {
     const position = config.subtitle_position ?? subtitleConfig.position ?? 'bottom';
-    const layout = subtitleLayout(position, Boolean(hookText));
-    const offsetSec = clamp(Number(config.subtitle_offset_sec ?? 0) || 0, -2, 2);
+    const layout = subtitleLayout(position, Boolean(hookText), dims.height);
+    const offsetSec = clamp(Number(config.subtitle_offset_sec ?? subtitleConfig.offset_sec ?? 0) || 0, -2, 2);
+    const rawFontSize = clamp(Number(config.subtitle_font_size ?? subtitleConfig.font_size ?? 64) || 64, 32, 96);
+    const assFontSize = Math.round((dims.width / 1080) * rawFontSize);
 
-    const assContent = toAss(useSubtitles ? subtitles : [], {
+    const activeSubtitles = (Array.isArray(config.edited_subtitles) && config.edited_subtitles.length > 0)
+      ? config.edited_subtitles
+      : (Array.isArray(config.subtitles) && config.subtitles.length > 0)
+        ? config.subtitles
+        : subtitles;
+
+    const assContent = toAss(useSubtitles ? activeSubtitles : [], {
       fontName: process.env.SUBTITLE_FONT || 'Montserrat',
-      fontSize: subtitleConfig.font_size ?? 42,
+      fontSize: assFontSize,
       alignment: layout.alignment,
       marginV: layout.marginV,
       offsetSec,

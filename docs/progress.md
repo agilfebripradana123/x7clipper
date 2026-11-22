@@ -356,21 +356,22 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, CSS 32.10 kB / JS 279.13 kB).
 - **Status:** Selesai (Fase 5 tuntas & seluruh MVP Fase 0 s/d 5 selesai!).
 
-## [2026-11-21] AI Auto-Editor, Sanitasi Visual & Presisi Subtitle (Fase 8)
-- **Tujuan:** Eliminasi artefak tag ASS `12)}`, sanitasi teks banner/subtitle, penambahan posisi subtitle (Atas/Tengah/Bawah), pencabutan batasan durasi kaku (>= 3s tanpa cap), kompensasi lead delay -0.18s, dan slider subtitle offset.
+## [2026-11-21] AI Auto-Editor, Multi-Aspect Ratio & Subtitle Controls (Fase 8)
+- **Tujuan:** Eliminasi artefak tag ASS `12)}`, sanitasi teks banner/subtitle, penambahan posisi subtitle (Atas/Tengah/Bawah), pencabutan batasan durasi kaku (>= 3s tanpa cap), kompensasi lead delay -0.18s, slider subtitle offset, dukungan multi-aspect ratio (`9:16`, `1:1`, `4:3`, `16:9`), mode blur background dengan layer video blur di preview dan FFmpeg gblur+eq brightness, slider ukuran font `subtitle_font_size` (32..96) dengan preset, serta editable cue text per baris.
 - **File diubah/ditambah:**
-  - `worker/src/subtitleShift.js` — `sanitizeAssText()`, `sanitizeDrawtext()`, `subtitleLayout()` (MarginV 240/0/340/160), kompensasi lead default -0.18s, `toAss()` dengan `Style: Banner` terpisah tanpa override tag `\pos(...)` yang rusak.
-  - `worker/src/renderer.js` — render subtitle & banner dengan sanitasi penuh, MarginV dinamis sesuai posisi dan keberadaan banner, support `subtitle_offset_sec`.
+  - `worker/src/renderer.js` — `outputDimensions` untuk 9:16 (1080x1920), 1:1 (1080x1080), 4:3 (1440x1080), 16:9 (1920x1080); filter `blur_bg` dengan split/scale/gblur/eq/overlay; dynamic crop untuk full_crop; proporsional font size & MarginV; render dengan subtitle yang telah diedit.
+  - `worker/src/subtitleShift.js` — `sanitizeAssText()`, `sanitizeDrawtext()`, `subtitleLayout()` (MarginV 240/0/340/160 proporsional PlayResY), kompensasi lead default -0.18s, `toAss()` dengan `Style: Banner` terpisah tanpa override tag `\pos(...)` yang rusak.
   - `worker/src/clipper.js` — presisi pemotongan keyframe dengan `-avoid_negative_ts make_zero`.
   - `worker/src/ninerouter.js` — prompt AI diperbarui untuk memilih segmen tuntas sesuai konteks tanpa batasan durasi kaku.
   - `worker/src/validator.js` — hapus batasan durasi 58s/110s, validasi minimal `>= 3s`.
   - `worker/src/agents/semanticPacer.js` — hapus pembatasan cap 58s, pertahankan konteks pembahasan yang utuh.
-  - `backend/app/Http/Controllers/Api/ClipController.php` — validasi `subtitle_position` ('top'|'middle'|'bottom') dan `subtitle_offset_sec` (-2 s/d 2).
-  - `frontend/src/components/Editor.jsx` — 3 tombol pilihan posisi (Atas, Tengah, Bawah) dengan sync jarak aman di bawah banner, slider Sync Subtitle (-2.0s s/d +2.0s) + tombol Reset, hapus peringatan batas 60s di timeline.
+  - `backend/app/Http/Controllers/Api/ClipController.php` — validasi `aspect_ratio` ('9:16'|'1:1'|'4:3'|'16:9'), `layout_mode` ('crop'|'blur'|'full_crop'|'blur_bg'), `subtitle_position` ('top'|'middle'|'bottom'), `subtitle_offset_sec` (-2 s/d 2), dan `subtitle_font_size` (32 s/d 96).
+  - `backend/tests/Feature/Api/ClipConfigApiTest.php` — test validasi aspect ratio baru dan subtitle font size.
+  - `frontend/src/components/Editor.jsx` — pemilih Rasio Aspek (9:16, 1:1, 4:3, 16:9) dengan dynamic canvas, mode blur background dengan layer video blur tersinkronisasi, 3 tombol posisi (Atas, Tengah, Bawah), slider font size (32..96) dengan 4 preset cepat (44, 64, 78, 92) dan skala proporsional presisi, slider Sync Subtitle (-2.0s s/d +2.0s) + tombol Reset, hapus peringatan batas 60s di timeline, serta edit teks per baris cue secara instan.
 - **Hasil uji:**
-  - `php artisan test` — **PASS 38/38 (165 assertions)**.
+  - `php artisan test` — **PASS 39/39 (177 assertions)**.
   - `npm test` (worker) — **PASS 86/86**.
-  - `npm run build` (frontend) — **PASS** (33 modules, JS 282.07 kB).
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 284.71 kB).
 - **Status:** Selesai (Fase 8 tuntas).
 
 

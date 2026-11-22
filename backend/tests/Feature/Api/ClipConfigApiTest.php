@@ -91,9 +91,25 @@ class ClipConfigApiTest extends TestCase
         $clip = $this->makeClip();
 
         $this->patchJson("/api/clips/{$clip->id}/config", [
-            'edit_config' => ['aspect_ratio' => '4:3', 'crop_x' => 1.4],
+            'edit_config' => ['aspect_ratio' => '21:9', 'crop_x' => 1.4],
         ])->assertStatus(422)
             ->assertJsonValidationErrors(['edit_config.aspect_ratio', 'edit_config.crop_x']);
+    }
+
+    public function test_accepts_all_valid_aspect_ratios_and_subtitle_font_size(): void
+    {
+        $clip = $this->makeClip();
+
+        foreach (['9:16', '1:1', '4:3', '16:9'] as $ratio) {
+            $this->patchJson("/api/clips/{$clip->id}/config", [
+                'edit_config' => [
+                    'aspect_ratio' => $ratio,
+                    'subtitle_font_size' => 64,
+                ],
+            ])->assertOk()
+                ->assertJsonPath('data.edit_config_json.aspect_ratio', $ratio)
+                ->assertJsonPath('data.edit_config_json.subtitle_font_size', 64);
+        }
     }
 
     public function test_rejects_trim_outside_clip_duration(): void

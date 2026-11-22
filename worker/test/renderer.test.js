@@ -18,23 +18,34 @@ const CLIP = {
   raw_clip_path: 'D:\\storage\\raw-clips\\clip-5.mp4',
 };
 
-test('outputDimensions: 16:9 tetap 1920x1080, 9:16 flip vertikal', () => {
-  assert.deepEqual(outputDimensions('16:9'), { width: 1920, height: 1080 });
+test('outputDimensions: mendukung 9:16, 1:1, 4:3, 16:9', () => {
   assert.deepEqual(outputDimensions('9:16'), { width: 1080, height: 1920 });
+  assert.deepEqual(outputDimensions('1:1'), { width: 1080, height: 1080 });
+  assert.deepEqual(outputDimensions('4:3'), { width: 1440, height: 1080 });
+  assert.deepEqual(outputDimensions('16:9'), { width: 1920, height: 1080 });
 });
 
-test('buildFilters 9:16 memotong horizontal berdasarkan crop_x', () => {
-  const filter = buildFilters({ aspectRatio: '9:16', cropX: 0.25 });
-  assert.ok(filter.includes("crop=w='trunc(ih*9/32)*2'"));
-  assert.ok(filter.includes("x='trunc((iw-ih*9/16)*0.25)'"));
-  assert.ok(filter.includes('scale=1080:1920'));
-  assert.ok(!filter.includes('subtitles='));
+test('buildFilters memotong horizontal berdasarkan crop_x untuk 9:16, 1:1, dan 4:3', () => {
+  const f916 = buildFilters({ aspectRatio: '9:16', cropX: 0.25 });
+  assert.ok(f916.includes("crop=w='trunc(ih*9/32)*2'"));
+  assert.ok(f916.includes("x='trunc((iw-ih*9/16)*0.25)'"));
+  assert.ok(f916.includes('scale=1080:1920'));
+
+  const f11 = buildFilters({ aspectRatio: '1:1', cropX: 0.5 });
+  assert.ok(f11.includes('crop=w=ih:h=ih:x=\'trunc((iw-ih)*0.5)\''));
+  assert.ok(f11.includes('scale=1080:1080'));
+
+  const f43 = buildFilters({ aspectRatio: '4:3', cropX: 0.75 });
+  assert.ok(f43.includes("crop=w='trunc(ih*2/3)*2'"));
+  assert.ok(f43.includes("x='trunc((iw-ih*4/3)*0.75)'"));
+  assert.ok(f43.includes('scale=1440:1080'));
 });
 
-test('buildFilters 9:16 mode blur membuat stack background blur dan video overlay', () => {
-  const filter = buildFilters({ aspectRatio: '9:16', layoutMode: 'blur' });
+test('buildFilters mode blur membuat stack background blur dengan gblur dan eq brightness', () => {
+  const filter = buildFilters({ aspectRatio: '9:16', layoutMode: 'blur_bg' });
   assert.ok(filter.includes('split=2[bg][fg]'));
-  assert.ok(filter.includes('boxblur='));
+  assert.ok(filter.includes('gblur=sigma=35'));
+  assert.ok(filter.includes('eq=brightness=-0.12'));
   assert.ok(filter.includes('overlay=(W-w)/2:(H-h)/2'));
 });
 

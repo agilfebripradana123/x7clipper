@@ -68,9 +68,10 @@ Sistem mengekstrak transkrip bertimestamp, mengirimkannya ke LLM melalui **9rout
 - Timestamp subtitle dipotong sesuai rentang klip dan digeser mundur sebesar `start_sec` sehingga selalu dimulai di `00:00`.
 
 ### FR-4: Web Video Editor (Studio Layout & AI Auto-Editor)
-- **Canvas Preview 9:16 & Auto-Skip:** Pratinjau vertikal langsung menerapkan hook banner, layout (crop/blur), dan viral subtitle. Saat video diputar, playhead otomatis melompati (auto-skip) segmen yang dinonaktifkan (`active: false`).
-- **Drag-to-Pan Crop:** User dapat menggeser/drag area preview langsung ke kiri/kanan untuk mengatur `crop_x` (0.0 - 1.0).
-- **Posisi Subtitle Vertikal:** Pilihan 3 posisi (Atas/Tengah/Bawah) dengan margin aman otomatis di bawah Hook Banner saat posisi Atas aktif.
+- **Multi-Aspect Ratio Canvas:** Pemilih rasio aspek video (`9:16`, `1:1`, `4:3`, `16:9`) dengan adaptasi geometri Canvas Preview secara dinamis.
+- **Full Crop & Blur Background:** Mode `blur_bg` menampilkan background video blur + redup (`gblur=sigma=35,eq=brightness=-0.12` di FFmpeg dan layer video blur di preview browser) dengan video asli utuh di tengah. Mode `full_crop` mendukung pan horizontal `crop_x` (0.0 - 1.0).
+- **Posisi Subtitle Vertikal & Ukuran Font:** Pilihan 3 posisi (Atas/Tengah/Bawah) dengan margin aman otomatis di bawah Hook Banner saat posisi Atas aktif. Kontrol ukuran font `subtitle_font_size` (32 - 96, default 64) dengan preset cepat (Kecil 44, Sedang 64, Besar 78, Jumbo 92) dan skala proporsional presisi preview vs render.
+- **Edit Teks Subtitle per Baris:** Seluruh daftar baris subtitle editable langsung dengan tombol loncat playhead; perubahan teks langsung tercermin di Canvas Preview dan auto-save.
 - **Sync Subtitle Offset:** Slider pengaturan delay (-2.0s s/d +2.0s) untuk menyelaraskan bibir dan teks secara real-time.
 - **Interactive CapCut-Style Timeline:**
   - Toolbar ringkas: Play/Pause (`Space`), Split di playhead (`S`), Hapus/Pulihkan segmen (`Delete`/`Backspace`), Undo (`Ctrl+Z`), dan badge durasi final (tanpa batasan durasi kaku, durasi bebas sesuai konteks >= 3s).

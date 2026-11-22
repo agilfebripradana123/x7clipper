@@ -93,16 +93,22 @@ export default function Editor({ clip, onBack }) {
   const [saveState, setSaveState] = useState('idle')
   const [saveError, setSaveError] = useState(null)
 
-  const [aspectRatio, setAspectRatio] = useState(
-    clip.edit_config_json?.aspect_ratio === '16:9' ? '16:9' : '9:16',
-  )
+  // Aspect Ratio: 9:16 | 1:1 | 4:3 | 16:9
+  const [aspectRatio, setAspectRatio] = useState(() => {
+    const ar = clip.edit_config_json?.aspect_ratio
+    return ['9:16', '1:1', '4:3', '16:9'].includes(ar) ? ar : '9:16'
+  })
+
   const [cropX, setCropX] = useState(() => {
     const c = clip.edit_config_json?.crop_x
     return typeof c === 'number' ? clamp(round3(c), 0, 1) : 0.5
   })
-  const [layoutMode, setLayoutMode] = useState(
-    clip.edit_config_json?.layout_mode === 'blur' ? 'blur' : 'crop',
-  )
+
+  const [layoutMode, setLayoutMode] = useState(() => {
+    const lm = clip.edit_config_json?.layout_mode
+    return lm === 'blur' || lm === 'blur_bg' ? 'blur_bg' : 'full_crop'
+  })
+
   const [hookBanner, setHookBanner] = useState(() => {
     const h = clip.edit_config_json?.hook_banner || {}
     return {
@@ -110,6 +116,12 @@ export default function Editor({ clip, onBack }) {
       text: typeof h.text === 'string' ? h.text : (clip.title || '').toUpperCase(),
     }
   })
+
+  const [subtitleFontSize, setSubtitleFontSize] = useState(() => {
+    const fs = clip.edit_config_json?.subtitle_font_size ?? clip.edit_config_json?.subtitle?.font_size
+    return typeof fs === 'number' ? clamp(Math.round(fs), 32, 96) : 64
+  })
+
   const [subtitle, setSubtitle] = useState(() => {
     const s = clip.edit_config_json?.subtitle || {}
     const cfgPos = clip.edit_config_json?.subtitle_position
@@ -120,7 +132,6 @@ export default function Editor({ clip, onBack }) {
         : s.position === 'top' || s.position === 'middle' || s.position === 'bottom'
           ? s.position
           : 'bottom',
-      font_size: typeof s.font_size === 'number' ? Math.round(s.font_size) : 42,
       color: typeof s.color === 'string' && HEX.test(s.color) ? s.color.toUpperCase() : '#FFFFFF',
       highlight_color: typeof s.highlight_color === 'string' && HEX.test(s.highlight_color) ? s.highlight_color.toUpperCase() : '#FFE600',
       highlight_keywords: Array.isArray(s.highlight_keywords) ? s.highlight_keywords : [],
@@ -140,6 +151,12 @@ export default function Editor({ clip, onBack }) {
       text: s.text ?? '',
     })),
   )
+
+  const updateRowText = (id, newText) => {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, text: newText } : r)))
+    setSaveState('idle')
+  }
+
   const [rowErrors, setRowErrors] = useState({})
   const [renderJob, setRenderJob] = useState(null)
   const [renderBusy, setRenderBusy] = useState(false)
@@ -151,6 +168,16 @@ export default function Editor({ clip, onBack }) {
   const [autoEditing, setAutoEditing] = useState(false)
   const [currentClip, setCurrentClip] = useState(clip)
 
+  const videoRef = useRef(null)
+  const bgVideoRef = useRef(null)
+  const stageRef = useRef(null)
+  const timelineTrackRef = useRef(null)
+  const isDraggingPlayhead = useRef(false)
+  const isDraggingCrop = useRef(false)
+  const dragStartCrop = useRef({ startX: 0, initialCrop: 0 })
+
+  const isBlur = layoutMode === 'blur' || layoutMode === 'blur_bg'
+
   // Trigger Run Auto-Editor Agent (force: true)
   const handleRunAutoEditor = async () => {
     if (autoEditing) return
@@ -158,7 +185,6 @@ export default function Editor({ clip, onBack }) {
     try {
       await prepareClip(currentClip.id, { force: true })
 
-      // Polling sampai klip ready lagi dan edit_config_json baru masuk
       let attempts = 0
       const pollTimer = setInterval(async () => {
         attempts++
@@ -170,11 +196,14 @@ export default function Editor({ clip, onBack }) {
             setAutoEditing(false)
             setCurrentClip(updated)
 
-            // Terapkan config baru ke state editor
             const cfg = updated.edit_config_json || {}
+            if (cfg.aspect_ratio && ['9:16', '1:1', '4:3', '16:9'].includes(cfg.aspect_ratio)) {
+              setAspectRatio(cfg.aspect_ratio)
+            }
             if (cfg.crop_x != null) setCropX(round3(cfg.crop_x))
-            if (cfg.layout_mode) setLayoutMode(cfg.layout_mode)
+            if (cfg.layout_mode) setLayoutMode(cfg.layout_mode === 'blur' ? 'blur_bg' : cfg.layout_mode)
             if (cfg.hook_banner) setHookBanner(cfg.hook_banner)
+            if (cfg.subtitle_font_size) setSubtitleFontSize(clamp(cfg.subtitle_font_size, 32, 96))
             if (cfg.subtitle) setSubtitle((prev) => ({ ...prev, ...cfg.subtitle }))
             if (Array.isArray(cfg.cuts) && cfg.cuts.length > 0) {
               setCuts(
@@ -188,9 +217,7 @@ export default function Editor({ clip, onBack }) {
             }
             setSaveState('saved')
           }
-        } catch {
-          // continue polling
-        }
+        } catch { /* continue polling */ }
         if (attempts > 30) {
           clearInterval(pollTimer)
           setAutoEditing(false)
@@ -202,48 +229,44 @@ export default function Editor({ clip, onBack }) {
     }
   }
 
-  const videoRef = useRef(null)
-  const stageRef = useRef(null)
-  const timelineTrackRef = useRef(null)
-  const isDraggingPlayhead = useRef(false)
-  const isDraggingCrop = useRef(false)
-  const dragStartCrop = useRef({ startX: 0, initialCrop: 0 })
-
   // 1-Click Presets
   const applyPreset = (presetName) => {
     setSaveState('idle')
     if (presetName === 'hormozi') {
-      setLayoutMode('crop')
+      setLayoutMode('full_crop')
       setHookBanner({ enabled: true, text: (hookBanner.text || clip.title || '').toUpperCase() })
+      setSubtitleFontSize(78)
       setSubtitle({
         enabled: true,
         position: 'middle',
-        font_size: 54,
         color: '#FFFFFF',
         highlight_color: '#FFE600',
         highlight_keywords: subtitle.highlight_keywords.length > 0 ? subtitle.highlight_keywords : ['RAHASIA', 'PENTING', 'VIRAL'],
+        offset_sec: subtitle.offset_sec,
       })
     } else if (presetName === 'podcast') {
-      setLayoutMode('blur')
+      setLayoutMode('blur_bg')
       setHookBanner({ enabled: true, text: (hookBanner.text || clip.title || '').toUpperCase() })
+      setSubtitleFontSize(64)
       setSubtitle({
         enabled: true,
         position: 'bottom',
-        font_size: 42,
         color: '#FFFFFF',
         highlight_color: '#4ADE80',
         highlight_keywords: subtitle.highlight_keywords,
+        offset_sec: subtitle.offset_sec,
       })
     } else if (presetName === 'breaking') {
-      setLayoutMode('crop')
+      setLayoutMode('full_crop')
       setHookBanner({ enabled: true, text: `BREAKING: ${(hookBanner.text || clip.title || '').toUpperCase()}` })
+      setSubtitleFontSize(64)
       setSubtitle({
         enabled: true,
         position: 'bottom',
-        font_size: 46,
         color: '#FACC15',
         highlight_color: '#EF4444',
         highlight_keywords: subtitle.highlight_keywords,
+        offset_sec: subtitle.offset_sec,
       })
     }
   }
@@ -254,6 +277,7 @@ export default function Editor({ clip, onBack }) {
     const clamped = clamp(t, 0, duration)
     try {
       v.currentTime = clamped
+      if (bgVideoRef.current) bgVideoRef.current.currentTime = clamped
     } catch { /* ignore */ }
     setCurrentTime(clamped)
   }
@@ -265,19 +289,29 @@ export default function Editor({ clip, onBack }) {
     const t = v.currentTime
     setCurrentTime(t)
 
-    // Cek apakah waktu ada di dalam segmen aktif
+    // Sync background video if blur mode
+    if (bgVideoRef.current) {
+      if (Math.abs(bgVideoRef.current.currentTime - t) > 0.15) {
+        bgVideoRef.current.currentTime = t
+      }
+      if (bgVideoRef.current.paused !== v.paused) {
+        if (v.paused) bgVideoRef.current.pause()
+        else bgVideoRef.current.play().catch(() => {})
+      }
+    }
+
     const activeCuts = cuts.filter((c) => c.active)
     const inActiveCut = activeCuts.some((c) => t >= c.start && t < c.end)
 
     if (!inActiveCut && activeCuts.length > 0) {
-      // Cari segmen aktif berikutnya
       const nextCut = activeCuts.find((c) => c.start > t)
       if (nextCut) {
         v.currentTime = nextCut.start
+        if (bgVideoRef.current) bgVideoRef.current.currentTime = nextCut.start
         setCurrentTime(nextCut.start)
       } else {
-        // Balik ke awal segmen aktif pertama
         v.currentTime = activeCuts[0].start
+        if (bgVideoRef.current) bgVideoRef.current.currentTime = activeCuts[0].start
         setCurrentTime(activeCuts[0].start)
       }
     }
@@ -288,16 +322,19 @@ export default function Editor({ clip, onBack }) {
     if (!v || videoError) return
     if (!v.paused) {
       v.pause()
+      if (bgVideoRef.current) bgVideoRef.current.pause()
       return
     }
     const activeCuts = cuts.filter((c) => c.active)
     const inCut = activeCuts.some((c) => v.currentTime >= c.start && v.currentTime < c.end)
     if (!inCut && activeCuts.length > 0) {
       v.currentTime = activeCuts[0].start
+      if (bgVideoRef.current) bgVideoRef.current.currentTime = activeCuts[0].start
       setCurrentTime(activeCuts[0].start)
     }
     try {
       await v.play()
+      if (bgVideoRef.current) bgVideoRef.current.play().catch(() => {})
     } catch { /* ignore */ }
   }
 
@@ -316,7 +353,7 @@ export default function Editor({ clip, onBack }) {
     pushHistory(nextCuts)
   }
 
-  // Hapus / Toggle Aktif Segmen
+  // Toggle Aktif Segmen
   const toggleCutActive = (id) => {
     const nextCuts = cuts.map((c) => (c.id === id ? { ...c, active: !c.active } : c))
     pushHistory(nextCuts)
@@ -420,41 +457,39 @@ export default function Editor({ clip, onBack }) {
     const ro = new ResizeObserver(update)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [aspectRatio])
 
+  // Geometri Canvas Stage berdasarkan aspectRatio dinamis
   const geom = useMemo(() => {
     const sw = stageSize.w
     const sh = stageSize.h
-    const vw = videoSize.w
-    const vh = videoSize.h
-    if (!sw || !sh || !vw || !vh) return null
+    const vw = videoSize.w || 1920
+    const vh = videoSize.h || 1080
+    if (!sw || !sh) return null
 
     const videoAspect = vw / vh
     const stageAspect = sw / sh
-    let dispW, dispH, offsetX, offsetY
 
-    if (stageAspect > videoAspect) {
+    let dispW, dispH, range
+    if (videoAspect >= stageAspect) {
       dispH = sh
       dispW = sh * videoAspect
-      offsetX = (sw - dispW) / 2
-      offsetY = 0
+      range = Math.max(0, dispW - sw)
     } else {
       dispW = sw
       dispH = sw / videoAspect
-      offsetX = 0
-      offsetY = (sh - dispH) / 2
+      range = 0
     }
 
-    const frameW = dispH * (9 / 16)
-    const frameH = dispH
-    const range = Math.max(0, dispW - frameW)
+    const frameW = sw
+    const frameH = sh
 
-    return { dispW, dispH, offsetX, offsetY, frameW, frameH, range }
-  }, [stageSize, videoSize])
+    return { dispW, dispH, frameW, frameH, range, videoAspect, stageAspect }
+  }, [stageSize, videoSize, aspectRatio])
 
   // Drag-to-Pan Crop
   const handlePointerDownCanvas = (e) => {
-    if (aspectRatio !== '9:16' || layoutMode === 'blur' || !geom || !geom.range) return
+    if (isBlur || !geom || geom.range <= 0) return
     isDraggingCrop.current = true
     dragStartCrop.current = { startX: e.clientX, initialCrop: cropX }
     e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -480,7 +515,7 @@ export default function Editor({ clip, onBack }) {
       handleSave()
     }, 1200)
     return () => clearTimeout(timer)
-  }, [cuts, cropX, layoutMode, hookBanner, subtitle, rows, aspectRatio, saveState])
+  }, [cuts, cropX, layoutMode, hookBanner, subtitle, subtitleFontSize, rows, aspectRatio, saveState])
 
   const handleSave = async () => {
     const errors = validateRows(rows, duration)
@@ -515,10 +550,11 @@ export default function Editor({ clip, onBack }) {
           cuts: sortedCuts,
           subtitle_position: subtitle.position,
           subtitle_offset_sec: round2(subtitle.offset_sec ?? 0),
+          subtitle_font_size: subtitleFontSize,
           subtitle: {
             enabled: subtitle.enabled,
             position: subtitle.position,
-            font_size: clamp(Math.round(subtitle.font_size) || 42, 8, 200),
+            font_size: subtitleFontSize,
             color: HEX.test(subtitle.color) ? subtitle.color.toUpperCase() : '#FFFFFF',
             highlight_color: HEX.test(subtitle.highlight_color) ? subtitle.highlight_color.toUpperCase() : '#FFE600',
             highlight_keywords: subtitle.highlight_keywords,
@@ -583,12 +619,10 @@ export default function Editor({ clip, onBack }) {
       })
     : null
 
-  // Total Durasi Output Aktif
   const totalOutputDuration = cuts
     .filter((c) => c.active)
     .reduce((acc, c) => acc + Math.max(0, c.end - c.start), 0)
 
-  // Timeline Ruler Ticks
   const rulerTicks = useMemo(() => {
     const ticks = []
     const step = duration > 60 ? 10 : 5
@@ -597,6 +631,27 @@ export default function Editor({ clip, onBack }) {
     }
     return ticks
   }, [duration])
+
+  // Aspect ratio container styling untuk Canvas Preview
+  const stageAspectStyle = useMemo(() => {
+    switch (aspectRatio) {
+      case '1:1':
+        return { aspectRatio: '1 / 1', maxHeight: '500px' }
+      case '4:3':
+        return { aspectRatio: '4 / 3', maxHeight: '460px' }
+      case '16:9':
+        return { aspectRatio: '16 / 9', maxHeight: '400px' }
+      case '9:16':
+      default:
+        return { aspectRatio: '9 / 16', maxHeight: '550px' }
+    }
+  }, [aspectRatio])
+
+  // Proporsional font size preview (lebar frame / 1080 * subtitle_font_size)
+  const previewFontPx = useMemo(() => {
+    const baseW = stageSize.w || 360
+    return clamp(Math.round((baseW / 1080) * subtitleFontSize), 14, 48)
+  }, [stageSize.w, subtitleFontSize])
 
   return (
     <div className="flex flex-col gap-4">
@@ -656,143 +711,128 @@ export default function Editor({ clip, onBack }) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         {/* Kolom Kiri: Canvas + Timeline (lg:col-span-8) */}
         <div className="flex flex-col gap-3 lg:col-span-8">
-          {/* Canvas Preview Stage (Aspect 9:16 Center Focus) */}
-          <div
-            ref={stageRef}
-            className="relative flex aspect-[9/13] sm:aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-2xl border border-line bg-void/90 shadow-2xl"
-          >
-            <video
-              ref={videoRef}
-              src={`/api/clips/${clip.id}/video`}
-              playsInline
-              preload="metadata"
-              onLoadedMetadata={(e) => {
-                setVideoSize({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })
-                setReady(true)
-              }}
-              onTimeUpdate={handleTimeUpdate}
-              onPlay={() => setPlaying(true)}
-              onPause={() => setPlaying(false)}
-              onError={() => setVideoError(true)}
-              className="h-full w-full object-contain"
-            />
+          {/* Canvas Preview Stage (Dinamis sesuai Aspect Ratio) */}
+          <div className="flex w-full items-center justify-center bg-void/60 rounded-2xl border border-line/50 p-2">
+            <div
+              ref={stageRef}
+              style={stageAspectStyle}
+              onPointerDown={handlePointerDownCanvas}
+              onPointerMove={handlePointerMoveCanvas}
+              onPointerUp={handlePointerUpCanvas}
+              onPointerCancel={handlePointerUpCanvas}
+              className={`relative mx-auto flex w-full items-center justify-center overflow-hidden rounded-xl border border-line bg-void shadow-2xl transition-[aspect-ratio] duration-300 ${
+                !isBlur && geom?.range > 0 ? 'cursor-grab active:cursor-grabbing' : ''
+              }`}
+            >
+              {/* Blur Background Layer */}
+              {isBlur && (
+                <video
+                  ref={bgVideoRef}
+                  src={`/api/clips/${clip.id}/video`}
+                  playsInline
+                  muted
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 h-full w-full object-cover scale-110 blur-xl brightness-75"
+                />
+              )}
 
-            {/* Drag-to-pan crop overlay container */}
-            {aspectRatio === '9:16' && layoutMode === 'crop' && geom && (
-              <div
-                onPointerDown={handlePointerDownCanvas}
-                onPointerMove={handlePointerMoveCanvas}
-                onPointerUp={handlePointerUpCanvas}
-                onPointerCancel={handlePointerUpCanvas}
-                className="absolute inset-0 cursor-grab active:cursor-grabbing"
-              >
-                <div
-                  className="pointer-events-none absolute"
-                  style={{
-                    left: geom.offsetX,
-                    top: geom.offsetY,
-                    width: Math.max(0, cropX * geom.range),
-                    height: geom.dispH,
-                    backgroundColor: 'rgba(10,11,13,0.72)',
-                  }}
-                />
-                <div
-                  className="pointer-events-none absolute"
-                  style={{
-                    left: geom.offsetX + cropX * geom.range + geom.frameW,
-                    top: geom.offsetY,
-                    width: Math.max(0, (1 - cropX) * geom.range),
-                    height: geom.dispH,
-                    backgroundColor: 'rgba(10,11,13,0.72)',
-                  }}
-                />
-                <div
-                  className="pointer-events-none absolute border border-accent/80 shadow-[0_0_0_1px_rgba(0,0,0,0.8)]"
-                  style={{
-                    left: geom.offsetX + cropX * geom.range,
-                    top: geom.offsetY,
-                    width: geom.frameW,
-                    height: geom.frameH,
-                  }}
-                >
-                  <span className="absolute left-2 top-2 rounded bg-accent/90 px-1.5 py-0.5 font-mono text-[9px] font-bold text-void">
-                    9:16 CROP
+              {/* Main Video Layer */}
+              <video
+                ref={videoRef}
+                src={`/api/clips/${clip.id}/video`}
+                playsInline
+                preload="metadata"
+                onLoadedMetadata={(e) => {
+                  setVideoSize({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })
+                  setReady(true)
+                }}
+                onTimeUpdate={handleTimeUpdate}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onError={() => setVideoError(true)}
+                style={
+                  geom && !isBlur && geom.range > 0
+                    ? {
+                        position: 'absolute',
+                        height: '100%',
+                        width: 'auto',
+                        maxWidth: 'none',
+                        left: `${-cropX * geom.range}px`,
+                        top: 0,
+                      }
+                    : {
+                        width: '100%',
+                        height: '100%',
+                        objectFit: isBlur ? 'contain' : 'cover',
+                      }
+                }
+                className={isBlur ? 'relative z-10' : 'relative'}
+              />
+
+              {/* Hook Banner Live Preview */}
+              {hookBanner.enabled && hookBanner.text && (
+                <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
+                  <span
+                    style={{
+                      fontFamily: "'Montserrat', sans-serif",
+                      fontWeight: 900,
+                      fontSize: clamp(Math.round((stageSize.w / 1080) * 54), 13, 26),
+                      color: '#FFFFFF',
+                      textTransform: 'uppercase',
+                      textAlign: 'center',
+                      lineHeight: 1.15,
+                      textShadow: '0 0 6px #000, 0 2px 8px rgba(0,0,0,0.95)',
+                    }}
+                  >
+                    {hookBanner.text}
                   </span>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Hook Banner Live Preview */}
-            {hookBanner.enabled && hookBanner.text && geom && (
-              <div
-                className="pointer-events-none absolute inset-x-0 top-6 z-20 flex justify-center px-6"
-                style={{
-                  left: aspectRatio === '9:16' && layoutMode !== 'blur' ? geom.offsetX + cropX * geom.range : geom.offsetX,
-                  width: aspectRatio === '9:16' && layoutMode !== 'blur' ? geom.frameW : geom.dispW,
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: "'Montserrat', sans-serif",
-                    fontWeight: 900,
-                    fontSize: clamp(geom.dispH * 0.038, 14, 28),
-                    color: '#FFFFFF',
-                    textTransform: 'uppercase',
-                    textAlign: 'center',
-                    lineHeight: 1.15,
-                    textShadow: '0 0 6px #000, 0 2px 8px rgba(0,0,0,0.95)',
-                  }}
-                >
-                  {hookBanner.text}
-                </span>
-              </div>
-            )}
-
-            {/* Viral Subtitle Live Preview */}
-            {activeSub && geom && (
-              <div
-                className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-6"
-                style={{
-                  left: aspectRatio === '9:16' && layoutMode !== 'blur' ? geom.offsetX + cropX * geom.range : geom.offsetX,
-                  width: aspectRatio === '9:16' && layoutMode !== 'blur' ? geom.frameW : geom.dispW,
-                  top: subtitle.position === 'top'
-                    ? (hookBanner.enabled ? '20%' : '10%')
-                    : subtitle.position === 'middle'
-                      ? '50%'
-                      : 'auto',
-                  bottom: subtitle.position === 'bottom' ? '12%' : 'auto',
-                  transform: subtitle.position === 'middle' ? 'translateY(-50%)' : 'none',
-                }}
-              >
+              {/* Viral Subtitle Live Preview */}
+              {activeSub && (
                 <div
+                  className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4"
                   style={{
-                    fontFamily: "'Montserrat', sans-serif",
-                    fontWeight: 800,
-                    fontSize: clamp(subtitle.font_size * (geom.dispH / 1920) * 1.5, 16, 36),
-                    textAlign: 'center',
-                    lineHeight: 1.2,
-                    textTransform: 'uppercase',
-                    textShadow: '0 0 5px #000, 0 3px 6px rgba(0,0,0,0.95)',
+                    top: subtitle.position === 'top'
+                      ? (hookBanner.enabled ? '22%' : '8%')
+                      : subtitle.position === 'middle'
+                        ? '50%'
+                        : 'auto',
+                    bottom: subtitle.position === 'bottom' ? '12%' : 'auto',
+                    transform: subtitle.position === 'middle' ? 'translateY(-50%)' : 'none',
                   }}
                 >
-                  {activeSub.text.split(/\s+/).map((word, wIdx) => {
-                    const clean = word.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
-                    const isKeyword = (subtitle.highlight_keywords || []).map((k) => k.toUpperCase()).includes(clean)
-                    return (
-                      <span
-                        key={wIdx}
-                        style={{
-                          color: isKeyword ? subtitle.highlight_color : subtitle.color,
-                          marginRight: '0.25em',
-                        }}
-                      >
-                        {word}
-                      </span>
-                    )
-                  })}
+                  <div
+                    style={{
+                      fontFamily: "'Montserrat', sans-serif",
+                      fontWeight: 800,
+                      fontSize: `${previewFontPx}px`,
+                      textAlign: 'center',
+                      lineHeight: 1.2,
+                      textTransform: 'uppercase',
+                      textShadow: '0 0 5px #000, 0 3px 6px rgba(0,0,0,0.95)',
+                    }}
+                  >
+                    {activeSub.text.split(/\s+/).map((word, wIdx) => {
+                      const clean = word.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+                      const isKeyword = (subtitle.highlight_keywords || []).map((k) => k.toUpperCase()).includes(clean)
+                      return (
+                        <span
+                          key={wIdx}
+                          style={{
+                            color: isKeyword ? subtitle.highlight_color : subtitle.color,
+                            marginRight: '0.25em',
+                          }}
+                        >
+                          {word}
+                        </span>
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Timeline CapCut-Style Container */}
@@ -992,7 +1032,7 @@ export default function Editor({ clip, onBack }) {
           {/* Tab 1: Gaya & Hook */}
           {activeTab === 'style' && (
             <div className="space-y-4 rounded-xl border border-line bg-panel/60 p-4">
-              {/* Agent Notes Banner (Alert styling jika fallback) */}
+              {/* Agent Notes Banner */}
               {currentClip.edit_config_json?.agent_notes && (() => {
                 const notes = currentClip.edit_config_json.agent_notes
                 const isFallback = String(notes.framing_reason || '').toLowerCase().includes('fallback')
@@ -1028,8 +1068,73 @@ export default function Editor({ clip, onBack }) {
                 )
               })()}
 
-              {/* 3 Preset 1-Klik */}
+              {/* Pilihan Rasio Aspek */}
               <div>
+                <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
+                  Rasio Aspek Video
+                </p>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    ['9:16', '9:16'],
+                    ['1:1', '1:1'],
+                    ['4:3', '4:3'],
+                    ['16:9', '16:9'],
+                  ].map(([val, label]) => {
+                    const active = aspectRatio === val
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => {
+                          setAspectRatio(val)
+                          setSaveState('idle')
+                        }}
+                        className={`rounded-lg py-2 text-center text-xs font-mono font-bold transition ${
+                          active
+                            ? 'border border-accent bg-accent/20 text-accent'
+                            : 'border border-line bg-void/50 text-muted hover:border-line-2 hover:bg-panel-2'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Mode Layout (Full Crop vs Blur Background) */}
+              <div className="border-t border-line pt-3">
+                <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
+                  Mode Tata Letak
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setLayoutMode('full_crop'); setSaveState('idle'); }}
+                    className={`rounded-lg border p-2 text-xs font-medium transition ${
+                      layoutMode === 'full_crop'
+                        ? 'border-accent bg-accent/10 text-accent font-bold'
+                        : 'border-line text-muted hover:border-line-2 hover:bg-panel-2'
+                    }`}
+                  >
+                    Full Crop (Zoom)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setLayoutMode('blur_bg'); setSaveState('idle'); }}
+                    className={`rounded-lg border p-2 text-xs font-medium transition ${
+                      layoutMode === 'blur_bg'
+                        ? 'border-accent bg-accent/10 text-accent font-bold'
+                        : 'border-line text-muted hover:border-line-2 hover:bg-panel-2'
+                    }`}
+                  >
+                    Blur Background
+                  </button>
+                </div>
+              </div>
+
+              {/* 3 Preset 1-Klik */}
+              <div className="border-t border-line pt-3">
                 <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
                   Preset Cepat 1-Klik
                 </p>
@@ -1057,37 +1162,6 @@ export default function Editor({ clip, onBack }) {
                   >
                     <span className="block text-xs font-bold text-fail">Breaking</span>
                     <span className="text-[10px] text-faint">News Punch</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Layout Mode */}
-              <div className="border-t border-line pt-3">
-                <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
-                  Mode Layout 9:16
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setLayoutMode('crop'); setSaveState('idle'); }}
-                    className={`rounded-lg border p-2 text-xs font-medium transition ${
-                      layoutMode === 'crop'
-                        ? 'border-accent bg-accent/10 text-accent font-bold'
-                        : 'border-line text-muted hover:border-line-2 hover:bg-panel-2'
-                    }`}
-                  >
-                    Full Crop (Zoom)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setLayoutMode('blur'); setSaveState('idle'); }}
-                    className={`rounded-lg border p-2 text-xs font-medium transition ${
-                      layoutMode === 'blur'
-                        ? 'border-accent bg-accent/10 text-accent font-bold'
-                        : 'border-line text-muted hover:border-line-2 hover:bg-panel-2'
-                    }`}
-                  >
-                    Blur Background
                   </button>
                 </div>
               </div>
@@ -1152,7 +1226,7 @@ export default function Editor({ clip, onBack }) {
 
               {subtitle.enabled && (
                 <>
-                  {/* Pilihan Posisi Subtitle (Atas, Tengah, Bawah) */}
+                  {/* Posisi Subtitle (Atas, Tengah, Bawah) */}
                   <div>
                     <span className="block font-mono text-[10px] text-faint mb-1.5 uppercase tracking-wider">
                       Posisi Subtitle
@@ -1183,6 +1257,54 @@ export default function Editor({ clip, onBack }) {
                         )
                       })}
                     </div>
+                  </div>
+
+                  {/* Ukuran Font Subtitle (Presets + Slider 32..96) */}
+                  <div className="border-t border-line/60 pt-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-mono text-[10px] text-faint uppercase tracking-wider">
+                        Ukuran Font ({subtitleFontSize}px)
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5 mb-2">
+                      {[
+                        [44, 'Kecil (44)'],
+                        [64, 'Sedang (64)'],
+                        [78, 'Besar (78)'],
+                        [92, 'Jumbo (92)'],
+                      ].map(([size, label]) => {
+                        const active = subtitleFontSize === size
+                        return (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => {
+                              setSubtitleFontSize(size)
+                              setSaveState('idle')
+                            }}
+                            className={`rounded py-1 text-[11px] font-mono transition ${
+                              active
+                                ? 'border border-accent bg-accent/20 text-accent font-bold'
+                                : 'border border-line bg-void text-muted hover:text-ink'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <input
+                      type="range"
+                      min="32"
+                      max="96"
+                      step="2"
+                      value={subtitleFontSize}
+                      onChange={(e) => {
+                        setSubtitleFontSize(Number(e.target.value))
+                        setSaveState('idle')
+                      }}
+                      className="w-full accent-accent"
+                    />
                   </div>
 
                   {/* Sync Subtitle Offset (-2.0s s/d +2.0s) */}
@@ -1220,11 +1342,9 @@ export default function Editor({ clip, onBack }) {
                         {(subtitle.offset_sec ?? 0) > 0 ? `+${(subtitle.offset_sec ?? 0).toFixed(2)}s` : `${(subtitle.offset_sec ?? 0).toFixed(2)}s`}
                       </span>
                     </div>
-                    <p className="text-[10px] text-faint mt-1">
-                      Geser ke kiri jika subtitle telat, geser ke kanan jika terlalu cepat.
-                    </p>
                   </div>
 
+                  {/* Warna Subtitle */}
                   <div className="grid grid-cols-2 gap-2 border-t border-line/60 pt-3">
                     <div>
                       <span className="block font-mono text-[10px] text-faint mb-1">Warna Teks</span>
@@ -1258,28 +1378,45 @@ export default function Editor({ clip, onBack }) {
                     </div>
                   </div>
 
-                  {/* Daftar Baris Subtitle (Klik to Seek) */}
+                  {/* Daftar Baris Subtitle Editable (Klik to Seek & Edit Teks) */}
                   <div className="border-t border-line pt-3">
                     <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
-                      Baris Subtitle (Klik untuk Lompat)
+                      Edit Teks Subtitle per Baris Cue ({rows.length} Baris)
                     </p>
-                    <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+                    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
                       {rows.map((r) => {
-                        const isActiveRow = currentTime >= Number(r.start) && currentTime < Number(r.end)
+                        const s = Number(r.start)
+                        const e = Number(r.end)
+                        const effectiveTime = currentTime - (Number(subtitle.offset_sec) || 0)
+                        const isActiveRow = effectiveTime >= s && effectiveTime < e
+
                         return (
                           <div
                             key={r.id}
-                            onClick={() => seekTo(Number(r.start))}
-                            className={`flex cursor-pointer items-center justify-between rounded-md border p-2 text-xs transition ${
+                            className={`flex items-center gap-2 rounded-lg border p-1.5 transition ${
                               isActiveRow
-                                ? 'border-accent bg-accent/15 text-accent font-semibold'
-                                : 'border-line/70 bg-void/50 text-muted hover:border-accent/40 hover:text-ink'
+                                ? 'border-accent bg-accent/15'
+                                : 'border-line/70 bg-void/50 hover:border-line'
                             }`}
                           >
-                            <span className="truncate pr-2">{r.text}</span>
-                            <span className="shrink-0 font-mono text-[10px] text-faint">
-                              {formatTime(Number(r.start))}
-                            </span>
+                            {/* Tombol Waktu (Klik to Seek) */}
+                            <button
+                              type="button"
+                              onClick={() => seekTo(s)}
+                              className="shrink-0 rounded bg-panel px-1.5 py-1 font-mono text-[10px] text-accent hover:bg-accent hover:text-void font-bold transition"
+                              title="Lompat ke detik ini"
+                            >
+                              {formatTime(s)}
+                            </button>
+
+                            {/* Input Teks Langsung */}
+                            <input
+                              type="text"
+                              value={r.text}
+                              onChange={(e) => updateRowText(r.id, e.target.value)}
+                              placeholder="Teks subtitle..."
+                              className="flex-1 min-w-0 bg-transparent text-xs text-ink outline-none border-b border-transparent focus:border-accent font-sans"
+                            />
                           </div>
                         )
                       })}
@@ -1303,8 +1440,12 @@ export default function Editor({ clip, onBack }) {
                     <span className="text-ink">MP4 (H.264 + AAC)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Resolusi</span>
-                    <span className="text-ink">1080x1920 (9:16)</span>
+                    <span>Rasio Aspek</span>
+                    <span className="text-accent font-bold">{aspectRatio}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Tata Letak</span>
+                    <span className="text-ink">{isBlur ? 'Blur Background' : 'Full Crop'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Audio Target</span>
