@@ -68,13 +68,16 @@ Sistem mengekstrak transkrip bertimestamp, mengirimkannya ke LLM melalui **9rout
 - Timestamp subtitle dipotong sesuai rentang klip dan digeser mundur sebesar `start_sec` sehingga selalu dimulai di `00:00`.
 
 ### FR-4: Web Video Editor (Studio Layout & AI Auto-Editor)
-- **Canvas Preview 9:16 & Auto-Skip:** Pratinjau vertikal langsung menerapkan hook banner, layout (crop/blur), dan viral subtitle. Saat video diputar, playhead otomatis melompati (auto-skip) bagian dead air yang dipotong.
+- **Canvas Preview 9:16 & Auto-Skip:** Pratinjau vertikal langsung menerapkan hook banner, layout (crop/blur), dan viral subtitle. Saat video diputar, playhead otomatis melompati (auto-skip) segmen yang dinonaktifkan (`active: false`).
 - **Drag-to-Pan Crop:** User dapat menggeser/drag area preview langsung ke kiri/kanan untuk mengatur `crop_x` (0.0 - 1.0).
-- **Panel Bertab (Gaya & Hook, Subtitle, Export):**
-  - **Preset 1-Klik:** 3 preset instan (`Hormozi Bold`, `Podcast Clean`, `Breaking Hook`) untuk kombinasi gaya banner, subtitle, dan layout.
-  - **Subtitle Interaktif:** Sinkronisasi playhead; klik baris teks langsung memposisikan video ke detik tersebut.
-  - **Multi-Cut Timeline:** Split segmen di playhead (shortcut `S`), hapus/pulihkan blok, undo (`Ctrl+Z`), dan spacebar Play/Pause.
-- **Auto-Save:** Konfigurasi editor otomatis tersimpan di latar belakang tanpa tombol simpan manual yang membingungkan.
+- **Posisi Subtitle Vertikal:** Pilihan 3 posisi (Atas/Tengah/Bawah) dengan margin aman otomatis di bawah Hook Banner saat posisi Atas aktif.
+- **Sync Subtitle Offset:** Slider pengaturan delay (-2.0s s/d +2.0s) untuk menyelaraskan bibir dan teks secara real-time.
+- **Interactive CapCut-Style Timeline:**
+  - Toolbar ringkas: Play/Pause (`Space`), Split di playhead (`S`), Hapus/Pulihkan segmen (`Delete`/`Backspace`), Undo (`Ctrl+Z`), dan badge durasi final (tanpa batasan durasi kaku, durasi bebas sesuai konteks >= 3s).
+  - Interactive ruler & draggable playhead untuk scrubbing halus real-time.
+  - Video track dengan drag-to-trim handle (kiri/kanan) pada setiap segmen aktif, klik untuk seleksi segmen, serta tampilan arsir redup untuk segmen nonaktif.
+  - Mini subtitle track di bawah track video untuk memandu titik potong di antara kalimat.
+- **Auto-Save:** Konfigurasi editor otomatis tersimpan di latar belakang dengan indikator status tanpa tombol manual.
 
 ### FR-5: Final Rendering & Export
 - Perubahan editor disimpan sebagai konfigurasi JSON (`edit_config_json`).

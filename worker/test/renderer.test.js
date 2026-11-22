@@ -152,12 +152,47 @@ test('renderClip menulis ASS, menjalankan ffmpeg, dan melaporkan progres', async
   assert.ok(written[0].path.endsWith('clip-5-render-9.ass'));
   assert.ok(written[0].content.includes('PlayResX: 1080'));
   assert.ok(written[0].content.includes('Alignment,2') === false);
-  assert.ok(written[0].content.includes(',8,20,20,40,1'));
+  assert.ok(written[0].content.includes(',8,20,20,160,1'));
   assert.ok(written[0].content.includes('&H0066E0FF'));
   assert.deepEqual(progress, [50, 100]);
   assert.ok(result.outputPath.endsWith('clip-5-render-9.mp4'));
   assert.ok(result.outputUrl.endsWith('clip-5-render-9.mp4'));
   assert.equal(result.durationSec, 10);
+});
+
+test('renderClip dengan hook_banner bebas artefak 12)} dan aman terhadap karakter spesial', async () => {
+  const written = [];
+
+  await renderClip({
+    clip: CLIP,
+    renderJobId: 99,
+    config: {
+      trim_start: 0,
+      trim_end: 10,
+      aspect_ratio: '9:16',
+      subtitle_position: 'top',
+      hook_banner: {
+        enabled: true,
+        text: "KUTIP: 'HOOK' %VIRAL% & {TEST:123} \\N \\pos(100,200)",
+      },
+      subtitle: { enabled: true, position: 'top', font_size: 40, color: '#FFFFFF' },
+    },
+    subtitles: [{ start: 0, end: 3, text: "SUBTITLE {RUSAK} \\pos(50,50) 'TEST': 100%" }],
+    outputDir: 'D:\\temp\\exports',
+    tempDir: 'D:\\temp\\tmp',
+    makeDir: async () => {},
+    write: async (path, content) => written.push({ path, content }),
+    remove: async () => {},
+    spawnFn: fakeSpawn({ stdout: ['out_time_ms=10000000'] }),
+  });
+
+  const assText = written[0].content;
+  // Pastikan tidak ada artefak "12)}" atau kurung kurawal bocor
+  assert.ok(!assText.includes('12)}'));
+  assert.ok(!assText.includes('{TEST'));
+  assert.ok(!assText.includes('\\pos('));
+  // Style top dengan banner harus memiliki MarginV 340
+  assert.ok(assText.includes(',8,20,20,340,1'));
 });
 
 test('renderClip tanpa subtitle tidak menulis ASS', async () => {

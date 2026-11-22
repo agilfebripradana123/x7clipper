@@ -48,6 +48,9 @@ export async function runAutoEditorAgent({
   log(`[AutoEditorAgent] Pacing: ${pacing.cuts.length} cuts, iterasi=${pacing.iterations} (${pacing.pacing_reason})`);
 
   // 4. Susun edit_config_json lengkap siap pakai
+  // cuts diinisialisasi 1 segmen utuh [0..durationSec] agar tidak terpotong-potong otomatis
+  const defaultWholeCut = [{ start: 0, end: Number(durationSec.toFixed(3)), active: true }];
+
   const editConfig = {
     aspect_ratio: '9:16',
     crop_x: framing.crop_x,
@@ -57,7 +60,7 @@ export async function runAutoEditorAgent({
       enabled: true,
       text: pacing.hook_banner_text || autoEditMeta.hook_banner_text || clipTitle.toUpperCase(),
     },
-    cuts: pacing.cuts,
+    cuts: defaultWholeCut,
     trim_start: 0,
     trim_end: Number(durationSec.toFixed(3)),
     subtitle: {
@@ -72,6 +75,7 @@ export async function runAutoEditorAgent({
       framing_reason: framing.framing_reason,
       pacing_reason: pacing.pacing_reason,
       iterations: pacing.iterations,
+      suggested_cuts: pacing.cuts,
       generated_at: new Date().toISOString(),
     },
   };

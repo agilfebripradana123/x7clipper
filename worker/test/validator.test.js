@@ -55,18 +55,11 @@ test('tolak klip dengan segment ID tidak ada di segmentMap', () => {
   assert.equal(result.length, 0);
 });
 
-test('tolak klip durasi < 15 detik', () => {
+test('tolak klip durasi < 3 detik', () => {
+  const tinyMap = {
+    S1: { start: 0, end: 1.5, text: 'pendek' },
+  };
   const raw = [{
-    title: 'Terlalu pendek',
-    start_segment_id: 'S1',
-    end_segment_id: 'S2',
-    viral_score: 80,
-    hook_type: 'story',
-    reason: 'r',
-    suggested_caption: 'c',
-  }];
-  // S1.start=0, S2.end=16, duration 16 + padding = 16.85 -> masih < 15? no, 16.85 > 15. Pake S1-S1 saja: 0..8 = 8s
-  const raw2 = [{
     title: 'Terlalu pendek',
     start_segment_id: 'S1',
     end_segment_id: 'S1',
@@ -75,25 +68,27 @@ test('tolak klip durasi < 15 detik', () => {
     reason: 'r',
     suggested_caption: 'c',
   }];
-  const result = validateClips(raw2, segmentMap, 80);
+  // start_sec = 0, end_sec = 1.5 + 0.5 = 2.0 -> duration 2.0 < 3
+  const result = validateClips(raw, tinyMap, 10);
   assert.equal(result.length, 0);
 });
 
-test('tolak klip durasi > 110 detik', () => {
+test('terima klip durasi panjang > 110 detik (tanpa batas cap maksimal)', () => {
   const bigMap = {};
   for (let i = 1; i <= 20; i++) bigMap[`S${i}`] = { start: (i - 1) * 8, end: i * 8, text: `t${i}` };
   // S1..S20 = 0..160 detik = 160s > 110
   const raw = [{
-    title: 'Terlalu panjang',
+    title: 'Panjang sesuai konteks',
     start_segment_id: 'S1',
     end_segment_id: 'S20',
-    viral_score: 70,
+    viral_score: 85,
     hook_type: 'debate',
     reason: 'r',
     suggested_caption: 'c',
   }];
   const result = validateClips(raw, bigMap, 160);
-  assert.equal(result.length, 0);
+  assert.equal(result.length, 1);
+  assert.ok(result[0].end_sec - result[0].start_sec > 110);
 });
 
 test('tolak klip dengan end <= start (segment terbalik)', () => {

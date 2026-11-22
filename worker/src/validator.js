@@ -34,7 +34,8 @@ export function validateClips(rawClips, segmentMap, videoDuration) {
     const start_sec = Math.max(0, startSegment.start - 0.35);
     const end_sec = Math.min(videoDuration, endSegment.end + 0.5);
     const duration = end_sec - start_sec;
-    if (duration < 15 || duration > 110) continue;
+    // Tanpa batas durasi maksimal; hanya pastikan urutan benar dan durasi minimal 3 detik.
+    if (end_sec <= start_sec || duration < 3) continue;
 
     valid.push({ ...clip, start_sec, end_sec });
   }

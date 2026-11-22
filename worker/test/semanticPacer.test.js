@@ -66,7 +66,7 @@ test('determinePacing lolos dalam 1 iterasi jika durasi <= 58 detik', async () =
   assert.ok(calculateActiveDuration(result.cuts) <= 58);
 });
 
-test('determinePacing memicu iterasi kedua jika durasi awal > 58s hingga turun <= 58s', async () => {
+test('determinePacing menerima video panjang tanpa batasan cap 58 detik', async () => {
   const cueMap = {
     C1: { id: 'C1', start: 0.0, end: 25.0, text: 'hook panjang' },
     C2: { id: 'C2', start: 26.0, end: 55.0, text: 'penjelasan awal' },
@@ -74,45 +74,21 @@ test('determinePacing memicu iterasi kedua jika durasi awal > 58s hingga turun <
     C4: { id: 'C4', start: 76.0, end: 95.0, text: 'punchline akhir' },
   };
 
-  let callCount = 0;
-  const fetchFn = async () => {
-    callCount++;
-    if (callCount === 1) {
-      // Iterasi 1: Belum pangkas banyak, durasi masih ~70s (> 58s)
-      return {
-        ok: true,
-        text: async () => JSON.stringify({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                drop_cue_ids: ['C3'],
-                hook_banner_text: 'BANNER PERTAMA',
-                highlight_keywords: ['A'],
-                pacing_reason: 'Hanya buang C3 tapi masih kepanjangan.',
-              }),
-            },
-          }],
-        }),
-      };
-    }
-
-    // Iterasi 2: Menerima feedback koreksi durasi, pangkas C2 juga sehingga durasi turun <= 58s
-    return {
-      ok: true,
-      text: async () => JSON.stringify({
-        choices: [{
-          message: {
-            content: JSON.stringify({
-              drop_cue_ids: ['C2', 'C3'],
-              hook_banner_text: 'BANNER FINAL SINGKAT',
-              highlight_keywords: ['A', 'B'],
-              pacing_reason: 'Pangkas C2 dan C3 agar durasi pas untuk Shorts.',
-            }),
-          },
-        }],
-      }),
-    };
-  };
+  const fetchFn = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            drop_cue_ids: ['C3'],
+            hook_banner_text: 'KISAH LENGKAP UTUH',
+            highlight_keywords: ['KISAH'],
+            pacing_reason: 'Hanya buang filler C3, pertahankan narasi utuh.',
+          }),
+        },
+      }],
+    }),
+  });
 
   const result = await determinePacing('cues...', cueMap, 100, {
     baseUrl: 'https://api.9router.com/v1',
@@ -121,9 +97,8 @@ test('determinePacing memicu iterasi kedua jika durasi awal > 58s hingga turun <
     fetchFn,
   });
 
-  assert.equal(callCount, 2);
-  assert.equal(result.iterations, 2);
-  assert.equal(result.hook_banner_text, 'BANNER FINAL SINGKAT');
+  assert.equal(result.iterations, 1);
+  assert.equal(result.hook_banner_text, 'KISAH LENGKAP UTUH');
   const duration = calculateActiveDuration(result.cuts);
-  assert.ok(duration <= 58);
+  assert.ok(duration > 58); // Bebas berapapun durasinya sesuai konteks
 });

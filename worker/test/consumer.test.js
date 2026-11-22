@@ -210,6 +210,33 @@ test('prepareClip idempoten: file ada -> clip ulang dilewati, status ready', asy
   ]);
 });
 
+test('prepareClip force: true menjalankan ulang agent tanpa download ulang jika file ada', async () => {
+  const { db, calls } = fakeClipDb({
+    clip: { ...CLIP, raw_clip_path: 'D:\\storage\\raw-clips\\clip-5.mp4', prepare_status: 'ready' },
+  });
+  let clipCalls = 0;
+  let agentCalled = false;
+
+  const result = await prepareClip(
+    { type: 'prepare_clip', clip_id: 5, force: true },
+    prepareDeps(db, {
+      fileExists: async () => true,
+      clipSegment: async () => { clipCalls++; return { clipPath: 'x' }; },
+      autoEditor: async () => {
+        agentCalled = true;
+        return { custom: 'agent-config' };
+      },
+    }),
+  );
+
+  assert.equal(result.clipId, 5);
+  assert.equal(clipCalls, 0); // lewati download ulang
+  assert.equal(agentCalled, true); // agent tetap dijalankan
+  const readyCall = calls.find(([name]) => name === 'markClipReady');
+  assert.equal(readyCall[2].rawClipPath, 'D:\\storage\\raw-clips\\clip-5.mp4');
+  assert.deepEqual(readyCall[2].editConfig, { custom: 'agent-config' });
+});
+
 test('db params: JSON diserialisasi dan INSERT memakai NOW()', () => {
   const params = toClipParams(7, {
     title: 'Klip', start_sec: '10.5', end_sec: '42.25', viral_score: '90',

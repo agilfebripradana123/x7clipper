@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shiftSubtitles, splitViralSubtitles, detectJumpCuts, toSrt, toAss } from '../src/subtitleShift.js';
+import { shiftSubtitles, splitViralSubtitles, detectJumpCuts, toSrt, toAss, sanitizeAssText, sanitizeDrawtext, subtitleLayout } from '../src/subtitleShift.js';
 
 const sampleSegments = [
   { start: 5, end: 9, text: 'Sebelum klip' },
@@ -11,19 +11,27 @@ const sampleSegments = [
 ];
 
 test('shiftSubtitles mengambil segmen dalam rentang dan menggeser timestamp mundur', () => {
-  // Rentang klip: 11.5s sampai 21.0s (durasi = 9.5s)
+  // Rentang klip: 11.5s sampai 21.0s (durasi = 9.5s) dengan lead compensation default 0.18s
   const result = shiftSubtitles(sampleSegments, 11.5, 21.0);
 
   assert.equal(result.length, 3);
 
-  // Segmen 1 (10..14): clamped start di 11.5 -> relative 0.0, end di 14.0 -> relative 2.5
-  assert.deepEqual(result[0], { start: 0.0, end: 2.5, text: 'Di awal klip' });
+  // Segmen 1 (10..14): clamped start di 11.5 -> relative 0.0, end di 14.0 -> relative 2.5 - 0.18 = 2.32
+  assert.deepEqual(result[0], { start: 0.0, end: 2.32, text: 'Di awal klip' });
 
-  // Segmen 2 (14..18): start 14-11.5 = 2.5, end 18-11.5 = 6.5
-  assert.deepEqual(result[1], { start: 2.5, end: 6.5, text: 'Di tengah klip' });
+  // Segmen 2 (14..18): start 14-11.5-0.18 = 2.32, end 18-11.5-0.18 = 6.32
+  assert.deepEqual(result[1], { start: 2.32, end: 6.32, text: 'Di tengah klip' });
 
-  // Segmen 3 (18..24): start 18-11.5 = 6.5, clamped end di 21.0 -> relative 9.5
-  assert.deepEqual(result[2], { start: 6.5, end: 9.5, text: 'Di akhir klip' });
+  // Segmen 3 (18..24): start 18-11.5-0.18 = 6.32, clamped end di 21.0 -> relative 9.5 - 0.18 = 9.32
+  assert.deepEqual(result[2], { start: 6.32, end: 9.32, text: 'Di akhir klip' });
+});
+
+test('shiftSubtitles dengan leadCompensation=0 mempertahankan timestamp persis', () => {
+  const result = shiftSubtitles(sampleSegments, 11.5, 21.0, { leadCompensation: 0 });
+  assert.equal(result[0].start, 0.0);
+  assert.equal(result[0].end, 2.5);
+  assert.equal(result[1].start, 2.5);
+  assert.equal(result[1].end, 6.5);
 });
 
 test('shiftSubtitles mengembalikan array kosong jika tidak ada irisan', () => {
@@ -87,14 +95,22 @@ test('splitViralSubtitles memecah baris panjang jadi 2-3 kata proporsional', () 
   assert.ok(viral[0].end <= viral[1].start + 0.01);
 });
 
-test('shiftSubtitles dengan opsi viral=true menghasilkan potongan pendek', () => {
-  const segs = [
-    { start: 0, end: 10, text: 'halo kawan semua selamat datang di podcast kami hari ini' }
-  ];
-  const result = shiftSubtitles(segs, 0, 10, { viral: true, maxWords: 3 });
-  assert.ok(result.length > 1);
-  for (const r of result) {
-    const wordCount = r.text.split(/\s+/).length;
-    assert.ok(wordCount <= 3);
-  }
+test('sanitizeAssText dan sanitizeDrawtext membersihkan karakter berbahaya', () => {
+  assert.equal(sanitizeAssText('Halo {rusak} \\pos(1,2) dunia'), 'Halo rusak pos(1,2) dunia');
+  assert.equal(sanitizeDrawtext("Judul 'Kutip': 100% aman"), "Judul ’Kutip’\\: 100\\% aman");
+});
+
+test('subtitleLayout mengembalikan alignment dan marginV presisi', () => {
+  assert.deepEqual(subtitleLayout('bottom'), { alignment: 2, marginV: 240 });
+  assert.deepEqual(subtitleLayout('middle'), { alignment: 5, marginV: 0 });
+  assert.deepEqual(subtitleLayout('top', false), { alignment: 8, marginV: 160 });
+  assert.deepEqual(subtitleLayout('top', true), { alignment: 8, marginV: 340 });
+});
+
+test('toAss menerapkan offsetSec dan sanitasi bebas artefak 12)}', () => {
+  const subs = [{ start: 1.0, end: 3.0, text: 'Halo {tag} dunia' }];
+  const ass = toAss(subs, { offsetSec: 0.5, highlightKeywords: ['DUNIA'] });
+
+  assert.ok(ass.includes('Dialogue: 0,0:00:01.50,0:00:03.50,Default,,0,0,0,,HALO TAG {\\c&H0000E6FF&}DUNIA{\\c&H00FFFFFF&}'));
+  assert.ok(!ass.includes('12)}'));
 });

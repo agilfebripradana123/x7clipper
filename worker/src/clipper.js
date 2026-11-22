@@ -106,7 +106,7 @@ export async function clipSegment(url, startSec, endSec, {
   const sectionSpec = `*${startSec}-${endSec}`;
 
   // 1. Download potongan segmen parsial via yt-dlp
-  // Ambil stream resolusi 1080p–1440p dengan format bv*[height<=1440]+ba/b dan merge ke mp4
+  // Prioritaskan AVC/H.264 atau VP9 berkecepatan decode tinggi, hindari AV1/HLS yang lambat & rentan timeout
   const ytdlpArgs = [
     '--download-sections', sectionSpec,
     '--force-keyframes-at-cuts',
@@ -114,17 +114,18 @@ export async function clipSegment(url, startSec, endSec, {
     '--no-playlist',
     '--retries', '5',
     '--fragment-retries', '5',
-    '-f', 'bv*[height<=1440]+ba/b',
+    '-f', 'bv*[vcodec^=avc1][height<=1440]+ba[ext=m4a]/bv*[ext=mp4][height<=1440]+ba[ext=m4a]/bv*[height<=1440]+ba/b[ext=mp4]/best',
     '--merge-output-format', 'mp4',
     '-o', tempFile,
     url,
   ];
 
-  await run(ytdlp, ytdlpArgs, { timeout: 180_000, maxBuffer: 10 * 1024 * 1024 });
+  await run(ytdlp, ytdlpArgs, { timeout: 360_000, maxBuffer: 20 * 1024 * 1024 });
 
   // 2. Re-encode awal via FFmpeg agar keyframe bersih dan ada +faststart
   const ffmpegArgs = [
     '-y',
+    '-avoid_negative_ts', 'make_zero',
     '-i', tempFile,
     '-c:v', 'libx264',
     '-preset', 'veryfast',
@@ -134,7 +135,7 @@ export async function clipSegment(url, startSec, endSec, {
   ];
 
   try {
-    await run(ffmpeg, ffmpegArgs, { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
+    await run(ffmpeg, ffmpegArgs, { timeout: 240_000, maxBuffer: 20 * 1024 * 1024 });
   } finally {
     try { await unlink(tempFile); } catch { /* ignore jika temp gagal dihapus */ }
   }

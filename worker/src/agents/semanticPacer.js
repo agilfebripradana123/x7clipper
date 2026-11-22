@@ -9,15 +9,15 @@ const pacingSchema = z.object({
   pacing_reason: z.string().min(1),
 });
 
-const PACER_SYSTEM_PROMPT = `Kamu adalah Editor Video Shorts/Reels profesional dengan spesialisasi tempo cepat, retensi tinggi, dan tanpa dead-air.
-Tugasmu menerima naskah cue bertimestamp [C1|start-end], lalu memilih daftar "drop_cue_ids" untuk dibuang agar video padat, to-the-point, dan berdurasi ideal antara 25 sampai 58 detik (maksimal 58 detik).
+const PACER_SYSTEM_PROMPT = `Kamu adalah Editor Video profesional dengan spesialisasi tempo yang enak ditonton dan konteks yang utuh.
+Tugasmu menerima naskah cue bertimestamp [C1|start-end], lalu (jika perlu) memilih daftar "drop_cue_ids" untuk dibuang agar video padat dan to-the-point TANPA merusak konteks. Tidak ada batas durasi: JANGAN memangkas isi pembahasan demi mengejar durasi tertentu. Jika seluruh cue relevan, kembalikan "drop_cue_ids": [].
 
 ATURAN EDITORIAL:
-1. "drop_cue_ids": Daftar ID cue yang HARUS DIHAPUS. Buang bagian basa-basi pembuka, salam bertele-tele, jeda canggung/filler berulang, atau penjelasan sampingan yang membosankan.
+1. "drop_cue_ids": Daftar ID cue yang HARUS DIHAPUS. Hanya buang basa-basi murni, salam bertele-tele, pengulangan kalimat identik, atau filler kosong. Jangan buang penjelasan yang dibutuhkan konteks.
 2. JANGAN PERNAH menghapus hook kalimat pembuka pertama atau punchline kalimat penutup di akhir.
 3. "hook_banner_text": Tulis ulang/sempurnakan judul hook maksimal 6 KATA (KAPITAL SEMUA) yang sangat memancing rasa penasaran.
 4. "highlight_keywords": 3–8 kata kunci terpenting yang diucapkan untuk diwarnai kontras.
-5. "pacing_reason": Alasan singkat 1 kalimat bagian mana yang dipangkas untuk menjaga ritme.
+5. "pacing_reason": Alasan singkat 1 kalimat bagian mana yang dipangkas (atau kenapa tidak ada yang dipangkas).
 
 OUTPUT HANYA FORMAT JSON VALID:
 {
@@ -62,6 +62,7 @@ export function buildCutsFromKeptCues(cueMap, dropCueIds = [], clipDuration, { b
   return merged.map((m) => ({
     start: Number(m.start.toFixed(2)),
     end: Number(m.end.toFixed(2)),
+    active: true,
   }));
 }
 
@@ -85,11 +86,13 @@ export async function determinePacing(formattedCues, cueMap, clipDuration, {
   fallbackHookText = '',
   fallbackKeywords = [],
 } = {}) {
+  const wholeClipCut = [{ start: 0, end: Number(clipDuration.toFixed(2)), active: true }];
+
   const fallbackResult = {
-    cuts: detectJumpCuts(Object.values(cueMap), clipDuration),
+    cuts: wholeClipCut,
     hook_banner_text: (fallbackHookText || clipTitle || '').toUpperCase(),
     highlight_keywords: fallbackKeywords,
-    pacing_reason: 'Fallback auto jump-cut (semantic pacer default).',
+    pacing_reason: 'Fallback default (1 segmen utuh, pemotongan otomatis dinonaktifkan).',
     iterations: 0,
   };
 
@@ -102,7 +105,7 @@ export async function determinePacing(formattedCues, cueMap, clipDuration, {
     { role: 'system', content: PACER_SYSTEM_PROMPT },
     {
       role: 'user',
-      content: `Berikut transkrip cue klip "${clipTitle}" (Total durasi asli: ${clipDuration}s):\n\n${formattedCues}\n\nPilihlah drop_cue_ids untuk memotong dead air/filler agar durasi video menjadi ringkas dan padat (maksimal 58 detik).`,
+      content: `Berikut transkrip cue klip "${clipTitle}" (Total durasi asli: ${clipDuration}s):\n\n${formattedCues}\n\nPilihlah drop_cue_ids jika ada filler/basa-basi murni yang perlu dibuang tanpa merusak alur cerita, serta tentukan hook_banner_text dan highlight_keywords.`,
     },
   ];
 
@@ -154,22 +157,12 @@ export async function determinePacing(formattedCues, cueMap, clipDuration, {
         iterations: iter,
       };
 
-      // Kriteria lolos: antara 15 detik s/d 58 detik
-      if (activeDuration >= 15 && activeDuration <= 58) {
+      // Pastikan ada durasi aktif minimal 3 detik
+      if (activeDuration >= 3) {
         return bestResult;
       }
-
-      // Jika masih > 58 detik pada iterasi 1, kirim feedback untuk iterasi 2
-      if (iter === 1 && activeDuration > 58) {
-        const excess = Number((activeDuration - 55).toFixed(1));
-        messages.push({ role: 'assistant', content });
-        messages.push({
-          role: 'user',
-          content: `Durasi aktif hasil potongan masih ${activeDuration}s (melebihi batas 58s Shorts/Reels). Pangkas sekitar ${excess}s lagi dengan menambahkan cue ID lain ke drop_cue_ids pada bagian penjelasan yang paling kurang esensial tanpa memotong punchline akhir.`,
-        });
-      }
     } catch {
-      // Loop coba lagi / iterasi 2
+      // Loop coba lagi
     }
   }
 

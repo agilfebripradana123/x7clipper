@@ -1,17 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getRenderJob, patchClipConfig, renderClip } from '../api'
-
-const HOOK = {
-  contrarian: 'Kontrarian',
-  story: 'Cerita',
-  actionable_tip: 'Tips praktis',
-  emotional: 'Emosional',
-  debate: 'Debat',
-}
-
-const MIN_GAP = 0.5
+import { getProject, getRenderJob, patchClipConfig, prepareClip, renderClip } from '../api'
 
 const round1 = (n) => Math.round(n * 10) / 10
+const round2 = (n) => Math.round(n * 100) / 100
 const round3 = (n) => Math.round(n * 1000) / 1000
 const clamp = (n, min, max) => Math.min(Math.max(n, min), max)
 
@@ -46,8 +37,8 @@ function validateRows(rows, duration) {
 }
 
 const BTN =
-  'inline-flex h-9 items-center justify-center rounded-lg px-3.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40'
-const BTN_PRIMARY = `${BTN} bg-accent text-void hover:bg-accent-2`
+  'inline-flex h-8 items-center justify-center rounded-md px-3 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40'
+const BTN_PRIMARY = `${BTN} bg-accent text-void hover:bg-accent-2 font-bold`
 const BTN_GHOST = `${BTN} border border-line text-ink hover:border-line-2 hover:bg-panel-2`
 
 export default function Editor({ clip, onBack }) {
@@ -56,29 +47,33 @@ export default function Editor({ clip, onBack }) {
     return Number.isFinite(raw) && raw > 0 ? round3(raw) : 1
   }, [clip.start_sec, clip.end_sec])
 
-  // Active Tab: 'style' | 'subtitle' | 'export'
+  // Active Right Tab: 'style' | 'subtitle' | 'export'
   const [activeTab, setActiveTab] = useState('style')
 
-  // Timeline Multi-Cut Segments
+  // Timeline Segments (Cuts): [{ id, start, end, active: true|false }]
   const [cuts, setCuts] = useState(() => {
     const c = clip.edit_config_json?.cuts
     if (Array.isArray(c) && c.length > 0) {
       return c
         .map((cut) => ({
           id: nextRowId(),
-          start: clamp(round3(Number(cut.start ?? 0)), 0, duration - 0.2),
-          end: clamp(round3(Number(cut.end ?? duration)), 0.2, duration),
+          start: clamp(round3(Number(cut.start ?? 0)), 0, duration - 0.1),
+          end: clamp(round3(Number(cut.end ?? duration)), 0.1, duration),
+          active: cut.active !== false,
         }))
         .filter((cut) => cut.end > cut.start)
     }
-    return [{ id: nextRowId(), start: 0, end: duration }]
+    return [{ id: nextRowId(), start: 0, end: duration, active: true }]
   })
+
+  // Selected Segment ID
+  const [selectedCutId, setSelectedCutId] = useState(null)
 
   // History for Undo
   const [history, setHistory] = useState([])
 
   const pushHistory = (newCuts) => {
-    setHistory((prev) => [...prev.slice(-10), cuts])
+    setHistory((prev) => [...prev.slice(-15), cuts])
     setCuts(newCuts)
     setSaveState('idle')
   }
@@ -117,13 +112,23 @@ export default function Editor({ clip, onBack }) {
   })
   const [subtitle, setSubtitle] = useState(() => {
     const s = clip.edit_config_json?.subtitle || {}
+    const cfgPos = clip.edit_config_json?.subtitle_position
     return {
       enabled: typeof s.enabled === 'boolean' ? s.enabled : true,
-      position: s.position === 'top' || s.position === 'middle' || s.position === 'bottom' ? s.position : 'bottom',
+      position: cfgPos === 'top' || cfgPos === 'middle' || cfgPos === 'bottom'
+        ? cfgPos
+        : s.position === 'top' || s.position === 'middle' || s.position === 'bottom'
+          ? s.position
+          : 'bottom',
       font_size: typeof s.font_size === 'number' ? Math.round(s.font_size) : 42,
       color: typeof s.color === 'string' && HEX.test(s.color) ? s.color.toUpperCase() : '#FFFFFF',
       highlight_color: typeof s.highlight_color === 'string' && HEX.test(s.highlight_color) ? s.highlight_color.toUpperCase() : '#FFE600',
       highlight_keywords: Array.isArray(s.highlight_keywords) ? s.highlight_keywords : [],
+      offset_sec: typeof clip.edit_config_json?.subtitle_offset_sec === 'number'
+        ? clamp(round2(clip.edit_config_json.subtitle_offset_sec), -2, 2)
+        : typeof s.offset_sec === 'number'
+          ? clamp(round2(s.offset_sec), -2, 2)
+          : 0,
     }
   })
 
@@ -143,8 +148,64 @@ export default function Editor({ clip, onBack }) {
   const [stageSize, setStageSize] = useState({ w: 0, h: 0 })
   const [videoSize, setVideoSize] = useState({ w: 0, h: 0 })
 
+  const [autoEditing, setAutoEditing] = useState(false)
+  const [currentClip, setCurrentClip] = useState(clip)
+
+  // Trigger Run Auto-Editor Agent (force: true)
+  const handleRunAutoEditor = async () => {
+    if (autoEditing) return
+    setAutoEditing(true)
+    try {
+      await prepareClip(currentClip.id, { force: true })
+
+      // Polling sampai klip ready lagi dan edit_config_json baru masuk
+      let attempts = 0
+      const pollTimer = setInterval(async () => {
+        attempts++
+        try {
+          const projectData = await getProject(currentClip.project_id)
+          const updated = projectData?.clips?.find((c) => c.id === currentClip.id)
+          if (updated && updated.prepare_status === 'ready') {
+            clearInterval(pollTimer)
+            setAutoEditing(false)
+            setCurrentClip(updated)
+
+            // Terapkan config baru ke state editor
+            const cfg = updated.edit_config_json || {}
+            if (cfg.crop_x != null) setCropX(round3(cfg.crop_x))
+            if (cfg.layout_mode) setLayoutMode(cfg.layout_mode)
+            if (cfg.hook_banner) setHookBanner(cfg.hook_banner)
+            if (cfg.subtitle) setSubtitle((prev) => ({ ...prev, ...cfg.subtitle }))
+            if (Array.isArray(cfg.cuts) && cfg.cuts.length > 0) {
+              setCuts(
+                cfg.cuts.map((cut) => ({
+                  id: nextRowId(),
+                  start: clamp(round3(Number(cut.start ?? 0)), 0, duration - 0.1),
+                  end: clamp(round3(Number(cut.end ?? duration)), 0.1, duration),
+                  active: cut.active !== false,
+                })),
+              )
+            }
+            setSaveState('saved')
+          }
+        } catch {
+          // continue polling
+        }
+        if (attempts > 30) {
+          clearInterval(pollTimer)
+          setAutoEditing(false)
+        }
+      }, 1500)
+    } catch (err) {
+      alert(`Gagal menjalankan Auto-Editor: ${err.message}`)
+      setAutoEditing(false)
+    }
+  }
+
   const videoRef = useRef(null)
   const stageRef = useRef(null)
+  const timelineTrackRef = useRef(null)
+  const isDraggingPlayhead = useRef(false)
   const isDraggingCrop = useRef(false)
   const dragStartCrop = useRef({ startX: 0, initialCrop: 0 })
 
@@ -197,25 +258,27 @@ export default function Editor({ clip, onBack }) {
     setCurrentTime(clamped)
   }
 
-  // Auto-skip inactive dead air during playback
+  // Auto-skip inactive segments during playback
   const handleTimeUpdate = () => {
     const v = videoRef.current
     if (!v) return
     const t = v.currentTime
     setCurrentTime(t)
 
-    // Periksa apakah waktu saat ini ada di dalam salah satu segmen cuts
-    const activeCut = cuts.find((c) => t >= c.start && t < c.end)
-    if (!activeCut && cuts.length > 0) {
-      // Sedang di area nonaktif/terhapus, otomatis loncat ke segmen aktif berikutnya
-      const nextCut = cuts.find((c) => c.start > t)
+    // Cek apakah waktu ada di dalam segmen aktif
+    const activeCuts = cuts.filter((c) => c.active)
+    const inActiveCut = activeCuts.some((c) => t >= c.start && t < c.end)
+
+    if (!inActiveCut && activeCuts.length > 0) {
+      // Cari segmen aktif berikutnya
+      const nextCut = activeCuts.find((c) => c.start > t)
       if (nextCut) {
         v.currentTime = nextCut.start
         setCurrentTime(nextCut.start)
       } else {
-        // Lewat akhir segmen terakhir, loop ke awal segmen pertama
-        v.currentTime = cuts[0].start
-        setCurrentTime(cuts[0].start)
+        // Balik ke awal segmen aktif pertama
+        v.currentTime = activeCuts[0].start
+        setCurrentTime(activeCuts[0].start)
       }
     }
   }
@@ -227,39 +290,103 @@ export default function Editor({ clip, onBack }) {
       v.pause()
       return
     }
-    // Jika di luar cuts, posisikan ke segmen pertama
-    const inCut = cuts.some((c) => v.currentTime >= c.start && v.currentTime < c.end)
-    if (!inCut && cuts.length > 0) {
-      v.currentTime = cuts[0].start
-      setCurrentTime(cuts[0].start)
+    const activeCuts = cuts.filter((c) => c.active)
+    const inCut = activeCuts.some((c) => v.currentTime >= c.start && v.currentTime < c.end)
+    if (!inCut && activeCuts.length > 0) {
+      v.currentTime = activeCuts[0].start
+      setCurrentTime(activeCuts[0].start)
     }
     try {
       await v.play()
     } catch { /* ignore */ }
   }
 
-  // Split segmen di playhead
+  // Split segmen di posisi playhead
   const splitAtPlayhead = () => {
     const t = round3(currentTime)
-    const targetIdx = cuts.findIndex((c) => t > c.start + 0.3 && t < c.end - 0.3)
+    const targetIdx = cuts.findIndex((c) => t > c.start + 0.25 && t < c.end - 0.25)
     if (targetIdx === -1) return
 
     const target = cuts[targetIdx]
-    const seg1 = { id: nextRowId(), start: target.start, end: t }
-    const seg2 = { id: nextRowId(), start: t, end: target.end }
+    const seg1 = { id: nextRowId(), start: target.start, end: t, active: target.active }
+    const seg2 = { id: nextRowId(), start: t, end: target.end, active: target.active }
 
     const nextCuts = [...cuts.slice(0, targetIdx), seg1, seg2, ...cuts.slice(targetIdx + 1)]
+    setSelectedCutId(seg2.id)
     pushHistory(nextCuts)
   }
 
-  // Hapus satu segmen
-  const deleteCut = (id) => {
-    if (cuts.length <= 1) return
-    const nextCuts = cuts.filter((c) => c.id !== id)
+  // Hapus / Toggle Aktif Segmen
+  const toggleCutActive = (id) => {
+    const nextCuts = cuts.map((c) => (c.id === id ? { ...c, active: !c.active } : c))
     pushHistory(nextCuts)
   }
 
-  // Keyboard Shortcuts: Space (Play/Pause), S (Split)
+  const deleteSelectedCut = () => {
+    if (!selectedCutId) return
+    toggleCutActive(selectedCutId)
+  }
+
+  // Trim handle drag (left / right)
+  const handleTrimDrag = (e, cutId, edge) => {
+    e.stopPropagation()
+    const track = timelineTrackRef.current
+    if (!track) return
+
+    const rect = track.getBoundingClientRect()
+    const onMove = (moveEvent) => {
+      const x = clamp(moveEvent.clientX - rect.left, 0, rect.width)
+      const t = round2((x / rect.width) * duration)
+
+      setCuts((prev) =>
+        prev.map((c) => {
+          if (c.id !== cutId) return c
+          if (edge === 'left') {
+            const newStart = clamp(t, 0, c.end - 0.2)
+            return { ...c, start: newStart }
+          } else {
+            const newEnd = clamp(t, c.start + 0.2, duration)
+            return { ...c, end: newEnd }
+          }
+        }),
+      )
+      setSaveState('idle')
+    }
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  // Timeline scrub / click to seek
+  const handleTimelineScrub = (e) => {
+    const track = timelineTrackRef.current
+    if (!track) return
+    const rect = track.getBoundingClientRect()
+    const x = clamp(e.clientX - rect.left, 0, rect.width)
+    seekTo((x / rect.width) * duration)
+  }
+
+  const handleTimelinePointerDown = (e) => {
+    isDraggingPlayhead.current = true
+    handleTimelineScrub(e)
+    const onMove = (moveEvent) => {
+      if (isDraggingPlayhead.current) handleTimelineScrub(moveEvent)
+    }
+    const onUp = () => {
+      isDraggingPlayhead.current = false
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  // Keyboard Shortcuts: Space, S, Delete/Backspace, Ctrl+Z
   useEffect(() => {
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
@@ -269,6 +396,9 @@ export default function Editor({ clip, onBack }) {
       } else if (e.code === 'KeyS') {
         e.preventDefault()
         splitAtPlayhead()
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        deleteSelectedCut()
       } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
         e.preventDefault()
         handleUndo()
@@ -276,9 +406,9 @@ export default function Editor({ clip, onBack }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cuts, currentTime, playing])
+  }, [cuts, selectedCutId, currentTime, playing])
 
-  // Geometri Canvas Stage
+  // Canvas Resize Observer
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
@@ -322,7 +452,7 @@ export default function Editor({ clip, onBack }) {
     return { dispW, dispH, offsetX, offsetY, frameW, frameH, range }
   }, [stageSize, videoSize])
 
-  // Canvas Drag-to-Pan Crop
+  // Drag-to-Pan Crop
   const handlePointerDownCanvas = (e) => {
     if (aspectRatio !== '9:16' || layoutMode === 'blur' || !geom || !geom.range) return
     isDraggingCrop.current = true
@@ -333,7 +463,6 @@ export default function Editor({ clip, onBack }) {
   const handlePointerMoveCanvas = (e) => {
     if (!isDraggingCrop.current || !geom?.range) return
     const deltaX = e.clientX - dragStartCrop.current.startX
-    // Geser video atau frame: geser mouse ke kiri menaikkan cropX
     const newCrop = clamp(dragStartCrop.current.initialCrop - deltaX / geom.range, 0, 1)
     setCropX(round3(newCrop))
     setSaveState('idle')
@@ -344,14 +473,12 @@ export default function Editor({ clip, onBack }) {
     try { e.currentTarget.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
   }
 
-  // Auto-Save Effect (Debounce 1.2s setelah perubahan selesai)
+  // Debounced Auto-Save
   useEffect(() => {
     if (saveState !== 'idle') return
-
     const timer = setTimeout(() => {
       handleSave()
     }, 1200)
-
     return () => clearTimeout(timer)
   }, [cuts, cropX, layoutMode, hookBanner, subtitle, rows, aspectRatio, saveState])
 
@@ -369,7 +496,7 @@ export default function Editor({ clip, onBack }) {
       .sort((a, b) => a.start - b.start)
 
     const sortedCuts = cuts
-      .map((c) => ({ start: round3(c.start), end: round3(c.end) }))
+      .map((c) => ({ start: round3(c.start), end: round3(c.end), active: c.active !== false }))
       .sort((a, b) => a.start - b.start)
 
     setSaveState('saving')
@@ -386,6 +513,8 @@ export default function Editor({ clip, onBack }) {
             text: hookBanner.text.trim(),
           },
           cuts: sortedCuts,
+          subtitle_position: subtitle.position,
+          subtitle_offset_sec: round2(subtitle.offset_sec ?? 0),
           subtitle: {
             enabled: subtitle.enabled,
             position: subtitle.position,
@@ -393,6 +522,7 @@ export default function Editor({ clip, onBack }) {
             color: HEX.test(subtitle.color) ? subtitle.color.toUpperCase() : '#FFFFFF',
             highlight_color: HEX.test(subtitle.highlight_color) ? subtitle.highlight_color.toUpperCase() : '#FFE600',
             highlight_keywords: subtitle.highlight_keywords,
+            offset_sec: round2(subtitle.offset_sec ?? 0),
           },
         },
         subtitles: sortedSubs,
@@ -448,11 +578,25 @@ export default function Editor({ clip, onBack }) {
     ? rows.find((r) => {
         const s = Number(r.start)
         const e = Number(r.end)
-        return currentTime >= s && currentTime < e && String(r.text).trim().length > 0
+        const effectiveTime = currentTime - (Number(subtitle.offset_sec) || 0)
+        return effectiveTime >= s && effectiveTime < e && String(r.text).trim().length > 0
       })
     : null
 
-  const totalOutputDuration = cuts.reduce((acc, c) => acc + Math.max(0, c.end - c.start), 0)
+  // Total Durasi Output Aktif
+  const totalOutputDuration = cuts
+    .filter((c) => c.active)
+    .reduce((acc, c) => acc + Math.max(0, c.end - c.start), 0)
+
+  // Timeline Ruler Ticks
+  const rulerTicks = useMemo(() => {
+    const ticks = []
+    const step = duration > 60 ? 10 : 5
+    for (let t = 0; t <= duration; t += step) {
+      ticks.push(t)
+    }
+    return ticks
+  }, [duration])
 
   return (
     <div className="flex flex-col gap-4">
@@ -467,17 +611,33 @@ export default function Editor({ clip, onBack }) {
               {clip.title}
             </h2>
             <div className="flex items-center gap-2 font-mono text-[10px] text-faint">
-              <span>Viral Score: {clip.viral_score}</span>
-              <span>·</span>
               <span>Durasi Asli: {formatTime(duration)}</span>
               <span>·</span>
-              <span className="text-accent">Output: {formatTime(totalOutputDuration)}</span>
+              <span className="text-accent font-bold">
+                Output: {formatTime(totalOutputDuration)}
+              </span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Status Auto-Save */}
+          <button
+            type="button"
+            onClick={handleRunAutoEditor}
+            disabled={autoEditing}
+            className={`${BTN_GHOST} text-accent border-accent/40 hover:bg-accent/10 px-3`}
+            title="Jalankan ulang Auto-Editor Agent untuk mencari framing & pacing baru"
+          >
+            {autoEditing ? (
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+                <span>Menganalisis…</span>
+              </span>
+            ) : (
+              '✨ Auto-Edit AI'
+            )}
+          </button>
+
           <span className={`font-mono text-[11px] ${saveState === 'saved' ? 'text-ok' : saveState === 'saving' ? 'text-accent' : saveState === 'error' ? 'text-fail' : 'text-faint'}`}>
             {saveState === 'saved' ? '● Tersimpan' : saveState === 'saving' ? '● Menyimpan…' : saveState === 'error' ? '● Gagal' : '● Belum simpan'}
           </span>
@@ -492,14 +652,14 @@ export default function Editor({ clip, onBack }) {
         </div>
       </div>
 
-      {/* Studio Workspace: 2-Kolom Desktop (Kiri: Canvas + Timeline Bawah, Kanan: Tab Panel) */}
+      {/* Studio Workspace: 2 Kolom (Kiri: Canvas + Timeline CapCut Style, Kanan: Tab Panel) */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* Kolom Kiri: Preview Canvas & Timeline (lg:col-span-8) */}
-        <div className="flex flex-col gap-4 lg:col-span-8">
+        {/* Kolom Kiri: Canvas + Timeline (lg:col-span-8) */}
+        <div className="flex flex-col gap-3 lg:col-span-8">
           {/* Canvas Preview Stage (Aspect 9:16 Center Focus) */}
           <div
             ref={stageRef}
-            className="relative flex aspect-[9/14] sm:aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-2xl border border-line bg-void/90 shadow-2xl"
+            className="relative flex aspect-[9/13] sm:aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-2xl border border-line bg-void/90 shadow-2xl"
           >
             <video
               ref={videoRef}
@@ -526,7 +686,6 @@ export default function Editor({ clip, onBack }) {
                 onPointerCancel={handlePointerUpCanvas}
                 className="absolute inset-0 cursor-grab active:cursor-grabbing"
               >
-                {/* Dim background kiri/kanan */}
                 <div
                   className="pointer-events-none absolute"
                   style={{
@@ -547,7 +706,6 @@ export default function Editor({ clip, onBack }) {
                     backgroundColor: 'rgba(10,11,13,0.72)',
                   }}
                 />
-                {/* Frame Garis Vertikal 9:16 */}
                 <div
                   className="pointer-events-none absolute border border-accent/80 shadow-[0_0_0_1px_rgba(0,0,0,0.8)]"
                   style={{
@@ -590,13 +748,20 @@ export default function Editor({ clip, onBack }) {
               </div>
             )}
 
-            {/* Viral Subtitle Live Preview (Word Highlight) */}
+            {/* Viral Subtitle Live Preview */}
             {activeSub && geom && (
               <div
-                className="pointer-events-none absolute inset-x-0 bottom-12 z-20 flex justify-center px-6"
+                className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-6"
                 style={{
                   left: aspectRatio === '9:16' && layoutMode !== 'blur' ? geom.offsetX + cropX * geom.range : geom.offsetX,
                   width: aspectRatio === '9:16' && layoutMode !== 'blur' ? geom.frameW : geom.dispW,
+                  top: subtitle.position === 'top'
+                    ? (hookBanner.enabled ? '20%' : '10%')
+                    : subtitle.position === 'middle'
+                      ? '50%'
+                      : 'auto',
+                  bottom: subtitle.position === 'bottom' ? '12%' : 'auto',
+                  transform: subtitle.position === 'middle' ? 'translateY(-50%)' : 'none',
                 }}
               >
                 <div
@@ -630,97 +795,172 @@ export default function Editor({ clip, onBack }) {
             )}
           </div>
 
-          {/* Player Transport & Shortcut Info */}
-          <div className="flex items-center justify-between rounded-xl border border-line bg-panel/60 p-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={togglePlay}
-                className={`${BTN_PRIMARY} h-8 w-20`}
-              >
-                {playing ? 'Jeda' : 'Putar'}
-              </button>
-              <button
-                type="button"
-                onClick={splitAtPlayhead}
-                className={`${BTN_GHOST} h-8 text-accent`}
-                title="Tekan tombol 'S' untuk split di posisi ini"
-              >
-                ✂ Split (S)
-              </button>
-              <button
-                type="button"
-                onClick={handleUndo}
-                disabled={history.length === 0}
-                className={`${BTN_GHOST} h-8`}
-                title="Undo (Ctrl+Z)"
-              >
-                ↶ Undo
-              </button>
+          {/* Timeline CapCut-Style Container */}
+          <div className="rounded-xl border border-line bg-panel/75 p-3.5 shadow-md flex flex-col gap-2.5">
+            {/* 1. Toolbar Ringkas Atas Timeline */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/60 pb-2.5">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={togglePlay}
+                  className={`${BTN_PRIMARY} h-7 w-16 text-[11px]`}
+                >
+                  {playing ? 'Jeda' : 'Putar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={splitAtPlayhead}
+                  className={`${BTN_GHOST} h-7 text-accent`}
+                  title="Bagi video di posisi garis waktu (Shortcut: S)"
+                >
+                  ✂ Split (S)
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteSelectedCut}
+                  disabled={!selectedCutId}
+                  className={`${BTN_GHOST} h-7 text-fail`}
+                  title="Hapus atau pulihkan segmen yang dipilih (Shortcut: Del)"
+                >
+                  {cuts.find((c) => c.id === selectedCutId)?.active === false ? 'Pulihkan' : 'Hapus'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  disabled={history.length === 0}
+                  className={`${BTN_GHOST} h-7`}
+                  title="Batalkan perubahan terakhir (Shortcut: Ctrl+Z)"
+                >
+                  ↶ Undo
+                </button>
+              </div>
+
+              {/* Time Indicators */}
+              <div className="flex items-center gap-2 font-mono text-xs">
+                <span className="text-ink font-semibold">{formatTime(currentTime)}</span>
+                <span className="text-faint">/</span>
+                <span className="text-faint">{formatTime(duration)}</span>
+                <span
+                  className="ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold bg-accent/15 text-accent border border-accent/40"
+                  title="Total durasi yang akan diekspor"
+                >
+                  Durasi: {formatTime(totalOutputDuration)}
+                </span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3 font-mono text-xs">
-              <span className="text-ink">{formatTime(currentTime)}</span>
-              <span className="text-faint">/ {formatTime(duration)}</span>
-              <span className="hidden sm:inline text-faint">| Space: Play/Pause · S: Split</span>
-            </div>
-          </div>
-
-          {/* Timeline Multi-Segmen Cuts Visual */}
-          <div className="rounded-xl border border-line bg-panel/70 p-3.5">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-faint">
-                Visual Jump-Cut Timeline ({cuts.length} Segmen Aktif)
-              </span>
-              <span className="font-mono text-[11px] text-accent">
-                Klik area untuk seek · Drag slider untuk pan crop
-              </span>
-            </div>
-
-            {/* Multi-cut Bar */}
+            {/* 2. Interactive Timeline Tracks (Ruler, Video Segments with Trim Handles, Subtitle Track) */}
             <div
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                const clickPct = (e.clientX - rect.left) / rect.width
-                seekTo(clickPct * duration)
-              }}
-              className="relative h-14 w-full cursor-pointer rounded-lg bg-void border border-line/80 overflow-hidden"
+              ref={timelineTrackRef}
+              onPointerDown={handleTimelinePointerDown}
+              className="relative select-none cursor-pointer rounded-lg border border-line/80 bg-void/90 py-2 px-1 flex flex-col gap-1.5 overflow-hidden"
+              style={{ minHeight: '120px' }}
             >
-              {/* Blok Segmen Aktif */}
-              {cuts.map((c, i) => {
-                const leftPct = (c.start / duration) * 100
-                const widthPct = ((c.end - c.start) / duration) * 100
-                return (
+              {/* Ruler Bar */}
+              <div className="relative h-4 w-full border-b border-line/40 text-[9px] font-mono text-faint">
+                {rulerTicks.map((t) => (
                   <div
-                    key={c.id}
-                    style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-                    className="group absolute inset-y-1 rounded bg-accent/20 border border-accent/60 flex items-center justify-between px-2 overflow-hidden hover:bg-accent/30 transition"
+                    key={t}
+                    style={{ left: `${(t / duration) * 100}%` }}
+                    className="absolute top-0 -translate-x-1/2 flex flex-col items-center pointer-events-none"
                   >
-                    <span className="font-mono text-[10px] text-accent font-bold truncate">
-                      #{i + 1} ({formatTime(c.end - c.start)})
-                    </span>
-                    {cuts.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          deleteCut(c.id)
-                        }}
-                        className="rounded p-0.5 text-fail hover:bg-fail/20 text-xs font-mono"
-                        title="Hapus segmen ini"
-                      >
-                        ×
-                      </button>
-                    )}
+                    <span>{t}s</span>
+                    <span className="h-1 w-px bg-line/80 mt-0.5" />
                   </div>
-                )
-              })}
+                ))}
+              </div>
 
-              {/* Playhead Indicator */}
+              {/* Video Track with Drag-to-Trim & Segment Selection */}
+              <div className="relative h-14 w-full bg-panel-2/40 rounded flex items-center">
+                {cuts.map((c) => {
+                  const leftPct = (c.start / duration) * 100
+                  const widthPct = ((c.end - c.start) / duration) * 100
+                  const isSelected = selectedCutId === c.id
+                  const isCutActive = c.active !== false
+
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedCutId(c.id)
+                        seekTo(c.start)
+                      }}
+                      style={{
+                        left: `${leftPct}%`,
+                        width: `${widthPct}%`,
+                      }}
+                      className={`group absolute inset-y-1 rounded border flex items-center justify-between transition-colors overflow-hidden ${
+                        !isCutActive
+                          ? 'border-dashed border-fail/40 bg-fail/10 opacity-60'
+                          : isSelected
+                            ? 'border-accent bg-accent/30 shadow-[0_0_0_1.5px_#eaa33c]'
+                            : 'border-accent/60 bg-accent/20 hover:bg-accent/25'
+                      }`}
+                    >
+                      {/* Left Trim Handle */}
+                      {isCutActive && (
+                        <div
+                          onPointerDown={(e) => handleTrimDrag(e, c.id, 'left')}
+                          className="h-full w-2.5 cursor-ew-resize bg-accent/40 hover:bg-accent flex items-center justify-center shrink-0 z-10"
+                          title="Tarik untuk trim awal"
+                        >
+                          <span className="h-3 w-0.5 bg-ink/70 rounded-full" />
+                        </div>
+                      )}
+
+                      {/* Label Durasi & Status */}
+                      <div className="flex-1 min-w-0 px-1.5 text-center font-mono text-[10px] font-bold truncate">
+                        <span className={isCutActive ? 'text-accent' : 'text-fail line-through'}>
+                          {formatTime(c.end - c.start)}
+                        </span>
+                        {!isCutActive && (
+                          <span className="block text-[8px] text-fail uppercase">Dilewati</span>
+                        )}
+                      </div>
+
+                      {/* Right Trim Handle */}
+                      {isCutActive && (
+                        <div
+                          onPointerDown={(e) => handleTrimDrag(e, c.id, 'right')}
+                          className="h-full w-2.5 cursor-ew-resize bg-accent/40 hover:bg-accent flex items-center justify-center shrink-0 z-10"
+                          title="Tarik untuk trim akhir"
+                        >
+                          <span className="h-3 w-0.5 bg-ink/70 rounded-full" />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Subtitle Mini Track */}
+              <div className="relative h-4 w-full bg-panel/30 rounded overflow-hidden">
+                {rows.map((r) => {
+                  const s = Number(r.start)
+                  const e = Number(r.end)
+                  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return null
+                  const leftPct = (s / duration) * 100
+                  const widthPct = ((e - s) / duration) * 100
+
+                  return (
+                    <div
+                      key={r.id}
+                      style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                      className="absolute inset-y-0.5 rounded-sm bg-accent/50 hover:bg-accent/80 transition"
+                      title={r.text}
+                    />
+                  )
+                })}
+              </div>
+
+              {/* Draggable Playhead Line with Tooltip */}
               <div
                 style={{ left: `${(currentTime / duration) * 100}%` }}
-                className="pointer-events-none absolute inset-y-0 w-0.5 bg-white shadow-[0_0_8px_white]"
-              />
+                className="pointer-events-none absolute inset-y-0 w-0.5 bg-white shadow-[0_0_8px_white] z-30"
+              >
+                <div className="absolute -top-1 -left-1.5 h-3 w-3 bg-white rotate-45 rounded-xs" />
+              </div>
             </div>
           </div>
         </div>
@@ -752,20 +992,41 @@ export default function Editor({ clip, onBack }) {
           {/* Tab 1: Gaya & Hook */}
           {activeTab === 'style' && (
             <div className="space-y-4 rounded-xl border border-line bg-panel/60 p-4">
-              {/* Agent Notes Banner (jika dihasilkan oleh Auto-Editor Agent) */}
-              {clip.edit_config_json?.agent_notes && (
-                <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 text-xs leading-relaxed">
-                  <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-accent font-bold mb-1">
-                    <span>✨ Auto-Editor Agent Decision</span>
+              {/* Agent Notes Banner (Alert styling jika fallback) */}
+              {currentClip.edit_config_json?.agent_notes && (() => {
+                const notes = currentClip.edit_config_json.agent_notes
+                const isFallback = String(notes.framing_reason || '').toLowerCase().includes('fallback')
+
+                return (
+                  <div
+                    className={`rounded-lg border p-3 text-xs leading-relaxed ${
+                      isFallback
+                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                        : 'border-accent/30 bg-accent/5 text-ink'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-wider font-bold mb-1.5">
+                      <span className={isFallback ? 'text-amber-400' : 'text-accent'}>
+                        {isFallback ? '⚠️ Auto-Editor (Fallback Active)' : '✨ Auto-Editor Agent Decision'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleRunAutoEditor}
+                        disabled={autoEditing}
+                        className="underline text-[10px] hover:text-white"
+                      >
+                        {autoEditing ? 'Analisis…' : 'Coba Ulang'}
+                      </button>
+                    </div>
+                    <p className="text-[11px] leading-snug">
+                      <strong>Framing:</strong> {notes.framing_reason}
+                    </p>
+                    <p className="text-[11px] mt-1 leading-snug opacity-80">
+                      <strong>Pacing:</strong> {notes.pacing_reason}
+                    </p>
                   </div>
-                  <p className="text-ink/90 text-[11px]">
-                    <strong>Framing:</strong> {clip.edit_config_json.agent_notes.framing_reason}
-                  </p>
-                  <p className="text-muted text-[11px] mt-1">
-                    <strong>Pacing:</strong> {clip.edit_config_json.agent_notes.pacing_reason}
-                  </p>
-                </div>
-              )}
+                )
+              })()}
 
               {/* 3 Preset 1-Klik */}
               <div>
@@ -891,7 +1152,80 @@ export default function Editor({ clip, onBack }) {
 
               {subtitle.enabled && (
                 <>
-                  <div className="grid grid-cols-2 gap-2">
+                  {/* Pilihan Posisi Subtitle (Atas, Tengah, Bawah) */}
+                  <div>
+                    <span className="block font-mono text-[10px] text-faint mb-1.5 uppercase tracking-wider">
+                      Posisi Subtitle
+                    </span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[
+                        ['top', 'Atas'],
+                        ['middle', 'Tengah'],
+                        ['bottom', 'Bawah'],
+                      ].map(([val, label]) => {
+                        const active = subtitle.position === val
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => {
+                              setSubtitle((p) => ({ ...p, position: val }))
+                              setSaveState('idle')
+                            }}
+                            className={`rounded-md py-1.5 text-xs font-medium transition ${
+                              active
+                                ? 'border border-accent bg-accent/15 text-accent font-bold'
+                                : 'border border-line text-muted hover:border-line-2 hover:bg-panel-2'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Sync Subtitle Offset (-2.0s s/d +2.0s) */}
+                  <div className="border-t border-line/60 pt-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-mono text-[10px] text-faint uppercase tracking-wider">
+                        Sync Subtitle (Offset)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSubtitle((p) => ({ ...p, offset_sec: 0 }))
+                          setSaveState('idle')
+                        }}
+                        className="text-[10px] font-mono text-accent hover:underline"
+                      >
+                        Reset (0.0s)
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="-2"
+                        max="2"
+                        step="0.05"
+                        value={subtitle.offset_sec ?? 0}
+                        onChange={(e) => {
+                          const val = round2(Number(e.target.value))
+                          setSubtitle((p) => ({ ...p, offset_sec: val }))
+                          setSaveState('idle')
+                        }}
+                        className="flex-1 accent-accent"
+                      />
+                      <span className="font-mono text-xs text-ink w-14 text-right">
+                        {(subtitle.offset_sec ?? 0) > 0 ? `+${(subtitle.offset_sec ?? 0).toFixed(2)}s` : `${(subtitle.offset_sec ?? 0).toFixed(2)}s`}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-faint mt-1">
+                      Geser ke kiri jika subtitle telat, geser ke kanan jika terlalu cepat.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 border-t border-line/60 pt-3">
                     <div>
                       <span className="block font-mono text-[10px] text-faint mb-1">Warna Teks</span>
                       <div className="flex items-center gap-2">
@@ -978,7 +1312,9 @@ export default function Editor({ clip, onBack }) {
                   </div>
                   <div className="flex justify-between">
                     <span>Total Durasi</span>
-                    <span className="text-accent font-bold">{formatTime(totalOutputDuration)}</span>
+                    <span className="text-accent font-bold">
+                      {formatTime(totalOutputDuration)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1003,7 +1339,7 @@ export default function Editor({ clip, onBack }) {
                   <a
                     href={`/api/render-jobs/${renderJob.id}/download`}
                     download
-                    className={`${BTN_PRIMARY} w-full py-2.5 text-center text-sm font-bold`}
+                    className={`${BTN_PRIMARY} w-full py-2 text-center text-sm font-bold`}
                   >
                     Unduh Video Final (.MP4)
                   </a>

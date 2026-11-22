@@ -83,8 +83,11 @@ export function patchClipConfig(clipId, payload) {
   })
 }
 
-export function prepareClip(clipId) {
-  return request(`/clips/${clipId}/prepare`, { method: 'POST' })
+export function prepareClip(clipId, { force = false } = {}) {
+  return request(`/clips/${clipId}/prepare`, {
+    method: 'POST',
+    body: JSON.stringify({ force }),
+  })
 }
 
 export function renderClip(clipId) {

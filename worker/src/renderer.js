@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { toAss, assColour, assTime } from './subtitleShift.js';
+import { toAss, assColour, assTime, subtitleLayout, sanitizeAssText } from './subtitleShift.js';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const defaultOutputDir = resolve(projectRoot, 'storage/exports');
@@ -90,6 +90,7 @@ export function parseProgressPercent(line, durationSec) {
 export function parseCuts(config, durationSec) {
   if (Array.isArray(config.cuts) && config.cuts.length > 0) {
     const validCuts = config.cuts
+      .filter((c) => c.active !== false)
       .map((c) => ({
         start: clamp(Number(c.start ?? 0), 0, durationSec),
         end: clamp(Number(c.end ?? durationSec), 0, durationSec),
@@ -238,6 +239,8 @@ export async function renderClip({
   const cuts = parseCuts(config, durationSec);
   const totalSec = seconds(cuts.reduce((sum, c) => sum + (c.end - c.start), 0));
   const subtitleConfig = config.subtitle ?? {};
+  const hookConfig = config.hook_banner ?? {};
+  const hookText = hookConfig.enabled && hookConfig.text ? sanitizeAssText(hookConfig.text).toUpperCase() : null;
   const useSubtitles = subtitleConfig.enabled !== false && subtitles.length > 0;
   const dims = outputDimensions(config.aspect_ratio);
 
@@ -245,29 +248,27 @@ export async function renderClip({
   await makeDir(tempDir, { recursive: true });
 
   const outputPath = resolve(outputDir, `clip-${clip.id}-render-${renderJobId}.mp4`);
-  const assPath = useSubtitles ? resolve(tempDir, `clip-${clip.id}-render-${renderJobId}.ass`) : null;
+  const assPath = (useSubtitles || hookText) ? resolve(tempDir, `clip-${clip.id}-render-${renderJobId}.ass`) : null;
 
   if (assPath) {
-    const hookConfig = config.hook_banner ?? {};
-    const hookText = hookConfig.enabled && hookConfig.text ? String(hookConfig.text).trim() : null;
+    const position = config.subtitle_position ?? subtitleConfig.position ?? 'bottom';
+    const layout = subtitleLayout(position, Boolean(hookText));
+    const offsetSec = clamp(Number(config.subtitle_offset_sec ?? 0) || 0, -2, 2);
 
-    let assContent = toAss(subtitles, {
+    const assContent = toAss(useSubtitles ? subtitles : [], {
       fontName: process.env.SUBTITLE_FONT || 'Montserrat',
       fontSize: subtitleConfig.font_size ?? 42,
-      alignment: ALIGNMENT[subtitleConfig.position] ?? 2,
+      alignment: layout.alignment,
+      marginV: layout.marginV,
+      offsetSec,
+      bannerText: hookText,
+      bannerDurationSec: totalSec,
       primaryColour: assColour(subtitleConfig.color),
       highlightColour: assColour(subtitleConfig.highlight_color || '#FFE600'),
       highlightKeywords: subtitleConfig.highlight_keywords || [],
       playResX: dims.width,
       playResY: dims.height,
     });
-
-    if (hookText) {
-      // Banner style di bagian paling atas
-      const escapedBanner = hookText.replace(/\\/g, '\\\\').replace(/[{}]/g, '').replace(/\r?\n/g, '\\N');
-      const bannerEvent = `Dialogue: 1,0:00:00.00,${assTime(durationSec)},Default,,0,0,0,{\\an8\\fs54\\b1\\c&H00FFFFFF&\\3c&H000000&\\4c&H80000000&\\bord3\\shad2\\pos(${dims.width / 2},120)}${escapedBanner}\n`;
-      assContent += bannerEvent;
-    }
 
     await write(assPath, assContent);
   }

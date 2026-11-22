@@ -132,4 +132,32 @@ class ClipPrepareApiTest extends TestCase
             'prepare_error' => 'Failed to enqueue prepare job: redis down',
         ]);
     }
+
+    public function test_force_prepare_requeues_job_even_when_file_exists(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'clip_');
+        file_put_contents($path, 'fake-video-bytes');
+
+        try {
+            $clip = $this->makeClip([
+                'prepare_status' => 'ready',
+                'raw_clip_path' => $path,
+            ]);
+
+            $response = $this->postJson("/api/clips/{$clip->id}/prepare", ['force' => true]);
+
+            $response->assertStatus(202)
+                ->assertJsonPath('data.prepare_status', 'preparing');
+
+            $jobs = Redis::connection()->lrange('x7:jobs', 0, -1);
+            $this->assertCount(1, $jobs);
+
+            $job = json_decode($jobs[0], true);
+            $this->assertSame('prepare_clip', $job['type']);
+            $this->assertSame($clip->id, $job['clip_id']);
+            $this->assertTrue($job['force']);
+        } finally {
+            @unlink($path);
+        }
+    }
 }

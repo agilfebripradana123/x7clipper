@@ -356,23 +356,21 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, CSS 32.10 kB / JS 279.13 kB).
 - **Status:** Selesai (Fase 5 tuntas & seluruh MVP Fase 0 s/d 5 selesai!).
 
-## [2026-11-21] AI Auto-Editor & Studio Layout (Fase 8)
-- **Tujuan:** Transformasi pipeline menjadi AI Auto-Editor matang (1440p, loudnorm audio broadcast, visual editorial plan, auto jump-cut dead air, viral subtitle highlight, studio layout web editor, dan autonomous auto-editor agent).
+## [2026-11-21] AI Auto-Editor, Sanitasi Visual & Presisi Subtitle (Fase 8)
+- **Tujuan:** Eliminasi artefak tag ASS `12)}`, sanitasi teks banner/subtitle, penambahan posisi subtitle (Atas/Tengah/Bawah), pencabutan batasan durasi kaku (>= 3s tanpa cap), kompensasi lead delay -0.18s, dan slider subtitle offset.
 - **File diubah/ditambah:**
-  - `worker/src/clipper.js` — yt-dlp `bv*[height<=1440]+ba/b` merge mp4.
-  - `worker/src/renderer.js` — audio broadcast normalization `-af loudnorm=I=-14:TP=-1.5:LRA=11` (single & multi-cut), lanczos, crf 18, highlight subtitle ASS generator.
-  - `worker/src/ninerouter.js` & `worker/src/validator.js` — skema `auto_edit` (hook_banner_text, recommended_layout, highlight_keywords).
-  - `worker/src/subtitleShift.js` — `detectJumpCuts` untuk auto split dead air > 1.2 detik dan word-level highlight matching.
-  - `worker/src/agents/perception.js` — ekstraksi 3 frame JPEG via ffmpeg (15%, 50%, 85%) ke base64 & Cue-ID Anchoring format `[C1|start-end]`.
-  - `worker/src/agents/visionFramer.js` — evaluasi visual via model vision 9router untuk layout 9:16 (`full_crop` vs `blur_bg`) & `crop_x` dengan fallback aman.
-  - `worker/src/agents/semanticPacer.js` — pangkas filler/basa-basi (`drop_cue_ids`), buffer bicara 0.15s, merge gap 0.35s, dan loop self-verification durasi <= 58s.
-  - `worker/src/agents/autoEditorAgent.js` — orchestrator agent yang dijalankan otomatis saat `prepare_clip` di `consumer.js`.
-  - `frontend/src/components/Editor.jsx` — Studio Layout 2-kolom: canvas preview dengan drag-to-pan crop, visual jump-cut timeline (split shortcut `S`, delete/restore, auto-skip dead air, undo `Ctrl+Z`), 3 tab panel (`Gaya & Hook`, `Subtitle`, `Export`), 3 preset 1-klik (`Hormozi`, `Podcast`, `Breaking`), debounced auto-save, dan display `agent_notes`.
+  - `worker/src/subtitleShift.js` — `sanitizeAssText()`, `sanitizeDrawtext()`, `subtitleLayout()` (MarginV 240/0/340/160), kompensasi lead default -0.18s, `toAss()` dengan `Style: Banner` terpisah tanpa override tag `\pos(...)` yang rusak.
+  - `worker/src/renderer.js` — render subtitle & banner dengan sanitasi penuh, MarginV dinamis sesuai posisi dan keberadaan banner, support `subtitle_offset_sec`.
+  - `worker/src/clipper.js` — presisi pemotongan keyframe dengan `-avoid_negative_ts make_zero`.
+  - `worker/src/ninerouter.js` — prompt AI diperbarui untuk memilih segmen tuntas sesuai konteks tanpa batasan durasi kaku.
+  - `worker/src/validator.js` — hapus batasan durasi 58s/110s, validasi minimal `>= 3s`.
+  - `worker/src/agents/semanticPacer.js` — hapus pembatasan cap 58s, pertahankan konteks pembahasan yang utuh.
+  - `backend/app/Http/Controllers/Api/ClipController.php` — validasi `subtitle_position` ('top'|'middle'|'bottom') dan `subtitle_offset_sec` (-2 s/d 2).
+  - `frontend/src/components/Editor.jsx` — 3 tombol pilihan posisi (Atas, Tengah, Bawah) dengan sync jarak aman di bawah banner, slider Sync Subtitle (-2.0s s/d +2.0s) + tombol Reset, hapus peringatan batas 60s di timeline.
 - **Hasil uji:**
-  - `php artisan test` — **PASS 37/37 (159 assertions)**.
-  - `npm test` (worker) — **PASS 81/81**.
-  - `npm run build` (frontend) — **PASS** (33 modules, JS 275.10 kB).
-  - Verifikasi riil FFmpeg: CLI render test sukses menghasilkan 1080x1920 9:16 dengan audio broadcast normal dan banner/subtitle burn-in.
+  - `php artisan test` — **PASS 38/38 (165 assertions)**.
+  - `npm test` (worker) — **PASS 86/86**.
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 282.07 kB).
 - **Status:** Selesai (Fase 8 tuntas).
 
 

@@ -39,14 +39,16 @@ export async function determineFraming(framesBase64, clipTitle = '', {
   fallbackLayout = 'full_crop',
   fallbackCropX = 0.5,
 } = {}) {
-  const defaultFallback = {
+  const defaultFallback = (errMsg = null) => ({
     layout_mode: fallbackLayout === 'blur_bg' ? 'blur_bg' : 'full_crop',
     crop_x: Math.min(1, Math.max(0, Number(fallbackCropX) || 0.5)),
-    framing_reason: 'Fallback default (vision framing skipped atau tidak tersedia).',
-  };
+    framing_reason: errMsg
+      ? `Fallback (Vision 9router gagal: ${errMsg})`
+      : 'Fallback default (vision framing skipped atau tidak tersedia).',
+  });
 
   if (!Array.isArray(framesBase64) || framesBase64.length === 0 || !baseUrl) {
-    return defaultFallback;
+    return defaultFallback();
   }
 
   const userContent = [
@@ -72,6 +74,7 @@ export async function determineFraming(framesBase64, clipTitle = '', {
   };
 
   const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+  let lastErrorMsg = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -85,7 +88,8 @@ export async function determineFraming(framesBase64, clipTitle = '', {
       });
 
       if (!res.ok) {
-        // Jika server menolak (misal model tidak support vision 400), langsung fallback
+        const errText = await res.text().catch(() => '');
+        lastErrorMsg = `HTTP ${res.status} ${errText.slice(0, 80)}`.trim();
         continue;
       }
 
@@ -108,11 +112,13 @@ export async function determineFraming(framesBase64, clipTitle = '', {
           crop_x: Math.min(1, Math.max(0, validated.data.crop_x)),
           framing_reason: validated.data.framing_reason,
         };
+      } else {
+        lastErrorMsg = 'Format output AI tidak valid';
       }
-    } catch {
-      // Loop coba lagi 1x sebelum fallback
+    } catch (err) {
+      lastErrorMsg = err?.message || 'Koneksi gagal';
     }
   }
 
-  return defaultFallback;
+  return defaultFallback(lastErrorMsg);
 }

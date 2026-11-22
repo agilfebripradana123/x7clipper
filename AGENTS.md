@@ -162,10 +162,11 @@ web-clipper/
 ### Fase 8: AI Auto-Editor & Studio Layout
 - [x] Sumber & Audio: format yt-dlp `bv*[height<=1440]+ba/b` + merge mp4, renderer `-sws_flags lanczos`, `-crf 18`, dan normalisasi audio `-af loudnorm=I=-14:TP=-1.5:LRA=11`.
 - [x] AI Editorial Plan: skema `auto_edit` di 9router & validator (`hook_banner_text`, `recommended_layout`, `highlight_keywords`).
-- [x] Auto Jump-Cut & Subtitle Highlight: deteksi jeda hening > 1.2 detik (`detectJumpCuts`), subtitle proporsional 2-3 kata dengan highlight kuning tebal (`toAss`), dan auto setup cuts saat `prepare_clip`.
-- [x] Web Editor Studio: 2-kolom desktop layout, canvas preview vertikal dengan drag-to-pan crop, visual multi-cut timeline (split playhead shortcut `S`, delete segment, auto-skip dead air saat diputar, undo `Ctrl+Z`), 3 tab panel (`Gaya & Hook`, `Subtitle`, `Export`), 3 preset 1-klik (`Hormozi`, `Podcast`, `Breaking`), dan debounced auto-save.
-- [x] Autonomous Auto-Editor Agent (Jalur 1): Sub-agent Vision Framing (`visionFramer.js`, ekstrak 3 frame sampel, tentukan layout 9:16 & `crop_x`) + Sub-agent Semantic Cut & Pacing (`semanticPacer.js`, Cue-ID Anchoring, pangkas filler/basa-basi, loop self-verification durasi <= 58s).
-- [x] Verifikasi: PHPUnit 37/37 PASS, worker node test 81/81 PASS, frontend build PASS, dan verifikasi riil FFmpeg render CLI berhasil.
+- [x] Autonomous Auto-Editor Agent (Jalur 1): Sub-agent Vision Framing (`visionFramer.js`, ekstrak 3 frame sampel, tentukan layout 9:16 & `crop_x`) + Sub-agent Semantic Pacing (`semanticPacer.js`, Cue-ID Anchoring, pangkas filler/basa-basi).
+- [x] Inisialisasi Cuts Mulus: klip dimulai dengan 1 segmen utuh `[0..durationSec]` (tanpa potongan jump-cut paksa) sehingga klip berjalan natural sejak awal.
+- [x] Modern CapCut-Style Timeline: toolbar ringkas (Play/Pause `Space`, Split `S`, Delete/Restore, Undo `Ctrl+Z`, badge durasi), interactive ruler & draggable playhead, video track dengan drag-to-trim handle kiri/kanan & seleksi segmen aktif/nonaktif, serta mini subtitle track.
+- [x] Sanitasi ASS & Posisi Subtitle: Perbaikan bug artefak `12)}`, sanitasi teks banner/subtitle, pengaturan posisi vertikal (Atas/Tengah/Bawah) dengan MarginV presisi, sinkronisasi delay (kompensasi lead -0.18s + slider `subtitle_offset_sec`), dan pencabutan batasan durasi kaku (bebas berapapun sesuai konteks >= 3s).
+- [x] Verifikasi: PHPUnit 38/38 PASS, worker node test 86/86 PASS, frontend build PASS.
 
 ---
 
@@ -190,25 +191,26 @@ web-clipper/
 - `2026-11-20`: `GET /api/clips/{id}/video` memakai `response()->file()`; Symfony `BinaryFileResponse` sudah menangani `Range` -> 206 (`Content-Range`, `Accept-Ranges: bytes`) tanpa kode manual.
 - `2026-11-20`: `phpunit.xml` memakai `REDIS_DB=15` agar test tidak berebut list `x7:jobs` dengan consumer development di DB 0 (sebelumnya job test bisa langsung dimakan consumer).
 - `2026-11-21`: `PATCH /api/clips/{id}/config` menerima `edit_config` (partial merge ke `edit_config_json` lama) + `subtitles` (replace penuh). Validasi: `aspect_ratio` `16:9|9:16`, `crop_x` `0..1`, `font_size` `8..200`, `trim_start/trim_end` harus dalam durasi klip (`end_sec - start_sec`) dan `trim_end > trim_start`, tiap subtitle `end > start`. Respons 200 mengembalikan `edit_config_json` + `subtitle_json`; `GET /api/projects/{id}` juga mengekspos keduanya agar editor bisa memuat state.
-- `2026-11-21`: `POST /api/clips/{id}/render` membuat `render_jobs` (`queued`, `progress_percent=0`) lalu push `{"type":"render_clip","render_job_id":N,"clip_id":N}` ke `x7:jobs` → 202. Job `queued|rendering` yang masih aktif dipakai ulang (202, tanpa push) agar klik Export berulang tidak menggandakan render. Klip belum siap (`prepare_status!=ready` atau file mentah hilang) → 409. Gagal enqueue → 503 + job `failed`. `GET /api/render-jobs/{id}` mengembalikan `status`/`progress_percent`/`output_url`/`error_message`.
+- `2026-11-21`: `POST /api/clips/{id}/render` membuat `render_jobs` (`queued`, `progress_percent=0`) lalu push `{"type":"render_clip","render_job_id":N,"clip_id":N}` ke `x7:jobs` → 202. Job `queued|rendering` yang masih aktif dipakai ulang (202, tanpa push) agar klik Export berulang tidak menggandakan render. Klip belum siap (`prepare_status!=ready` atau file mentah hilang) → 409. Gagal enqueue -> 503 + job `failed`. `GET /api/render-jobs/{id}` mengembalikan `status`/`progress_percent`/`output_url`/`error_message`.
 - `2026-11-21`: Renderer selalu men-scale output ke resolusi tetap (`1920x1080` untuk 16:9, `1080x1920` untuk 9:16) dan ASS memakai `PlayResX/Y` yang sama, supaya ukuran font/posisi subtitle konsisten dengan preview. Crop 9:16: `crop=w='trunc(ih*9/32)*2':x='trunc((iw-ih*9/16)*crop_x)'` lalu `scale=1080:1920`.
 - `2026-11-21`: `renderClip` dipisah jadi fungsi murni (`buildArgs`, `buildFilters`, `parseProgressPercent`, `trimRange`) + runner `spawn` agar testable tanpa FFmpeg. Progres dibaca dari `-progress pipe:1` (`out_time_ms`/`out_time`), di-throttle tiap 5% di consumer dan nilai mundur diabaikan. Output `storage/exports/clip-<clipId>-render-<jobId>.mp4`, `output_url` disimpan relatif terhadap root proyek. File ASS sementara di `storage/tmp/` dihapus setelah render.
 - `2026-11-21`: Konkurensi render dibatasi via `RENDER_CONCURRENCY` (default `1`, clamp `1..2`) + limiter internal (`createLimiter`). Job `render_clip` dijalankan di lane sendiri sehingga tidak memblokir `analyze_project`/`prepare_clip`; shutdown menunggu render aktif (`Promise.allSettled`) sebelum menutup DB.
 - `2026-11-21`: Fase 6 Tahap 1 (Fix Resolusi): yt-dlp diset `bv*[height<=1440]+ba/b` dengan `--merge-output-format mp4` di `clipper.js`. Di `renderer.js`: `-sws_flags lanczos` dan `-crf 18` untuk ketajaman scale 9:16 (1080x1920) optimal tanpa beban decode 4K AV1.
+- `2026-11-21`: Eliminasi bug artefak `12)}`: banner hook dipindahkan ke `Style: Banner` terpisah tanpa override tag `\pos(...)`. Sanitasi `sanitizeAssText` menghapus kurung kurawal pembuka/penutup dan backslash mentah.
+- `2026-11-21`: Posisi subtitle vertikal didukung (`top`: MarginV=160/340, `middle`: MarginV=0, `bottom`: MarginV=240) dan sinkronisasi delay diperbaiki dengan kompensasi lead `-0.18s` plus slider `subtitle_offset_sec` (`-2s..+2s`). Batasan durasi klip maksimal dicabut; klip utuh sesuai konteks `>= 3s`.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 8 (AI Auto-Editor & Studio Layout) — Selesai Penuh
-- **Tugas Terakhir Selesai:** Fase 8 — AI Auto-Editor & Studio Layout:
-  - Upgrade sumber: 1440p mp4 merge + lanczos scaling + CRF 18 + normalisasi audio `-af loudnorm=I=-14:TP=-1.5:LRA=11`.
-  - Skema AI `auto_edit`: hook banner, rekomendasi layout, keyword highlights di `ninerouter.js` & `validator.js`.
-  - Auto Jump-Cut & Subtitle Highlight: deteksi jeda hening > 1.2s, cuts otomatis di `prepare_clip`, highlight kuning `#FFE600` di generator ASS & preview.
-  - Web Editor Studio Layout: 2 kolom desktop, drag-to-pan crop, visual timeline cuts (split `S`, delete segment, auto-skip dead air, undo `Ctrl+Z`), 3 tab panel (`Gaya & Hook`, `Subtitle`, `Export`), 3 preset 1-klik (`Hormozi`, `Podcast`, `Breaking`), auto-save debounced.
-  - Autonomous Auto-Editor Agent (Jalur 1): Sub-agent Vision Framing (`visionFramer.js`, ekstrak 3 frame sampel, tentukan layout 9:16 & `crop_x`) + Sub-agent Semantic Cut & Pacing (`semanticPacer.js`, Cue-ID Anchoring, pangkas filler/basa-basi, loop self-verification durasi <= 58s).
-  - Verifikasi: PHPUnit 37/37 PASS, worker node test 81/81 PASS, frontend build PASS, dan verifikasi riil FFmpeg render CLI berhasil.
-- **Tugas Berikutnya:** Sistem AI Auto-Editor & Web Clipper siap digunakan secara optimal.
-- **File Terakhir Diubah:** `worker/src/{clipper,renderer,subtitleShift,consumer,db,ninerouter,validator}.js`, `frontend/src/components/Editor.jsx`, `docs/progress.md`, `PRD.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 37/37 (159 assertions), `npm test` (worker) PASS 71/71, `npm run build` PASS.
+- **Fase Aktif:** Fase 8 (AI Auto-Editor, Sanitasi Visual & Presisi Subtitle) — Selesai Penuh
+- **Tugas Terakhir Selesai:**
+  - Bug artefak `12)}` diperbaiki dengan `Style: Banner` terpisah dan sanitasi `sanitizeAssText` / `sanitizeDrawtext`.
+  - Pilihan posisi subtitle Atas, Tengah, Bawah terintegrasi di frontend, preview 9:16, dan ASS generator FFmpeg.
+  - Batasan durasi klip maksimal (58s/110s) dicabut: klip tuntas sesuai konteks (>= 3s).
+  - Delay subtitle disinkronkan: potongan `clipper.js` presisi, kompensasi lead -0.18s, dan slider `subtitle_offset_sec` di web editor.
+  - Verifikasi: PHPUnit 38/38 PASS, worker node test 86/86 PASS, frontend build PASS.
+- **Tugas Berikutnya:** Semua perbaikan tuntas dan siap digunakan.
+- **File Terakhir Diubah:** `worker/src/{renderer,subtitleShift,clipper,ninerouter,validator,agents/semanticPacer}.js`, `frontend/src/components/Editor.jsx`, `backend/app/Http/Controllers/Api/ClipController.php`, `backend/tests/Feature/Api/ClipPrepareApiTest.php`, `docs/progress.md`, `PRD.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 38/38 (165 assertions), `npm test` (worker) PASS 86/86, `npm run build` PASS.

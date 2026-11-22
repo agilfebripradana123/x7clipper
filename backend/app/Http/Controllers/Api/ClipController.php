@@ -13,17 +13,20 @@ use Throwable;
 
 class ClipController extends Controller
 {
-    public function prepare(Clip $clip): JsonResponse
+    public function prepare(Request $request, Clip $clip): JsonResponse
     {
+        $force = (bool) $request->input('force', false);
+
         if (
-            $clip->prepare_status === 'ready'
+            ! $force
+            && $clip->prepare_status === 'ready'
             && $clip->raw_clip_path !== null
             && is_file($clip->raw_clip_path)
         ) {
             return $this->clipResponse($clip, 200);
         }
 
-        if ($clip->prepare_status === 'preparing') {
+        if (! $force && $clip->prepare_status === 'preparing') {
             return $this->clipResponse($clip, 202);
         }
 
@@ -33,7 +36,10 @@ class ClipController extends Controller
         ]);
 
         try {
-            JobQueue::push('prepare_clip', ['clip_id' => $clip->id]);
+            JobQueue::push('prepare_clip', [
+                'clip_id' => $clip->id,
+                'force' => $force,
+            ]);
         } catch (Throwable $e) {
             $clip->update([
                 'prepare_status' => 'failed',
@@ -58,6 +64,8 @@ class ClipController extends Controller
             'edit_config.hook_banner' => ['sometimes', 'array'],
             'edit_config.hook_banner.enabled' => ['sometimes', 'boolean'],
             'edit_config.hook_banner.text' => ['sometimes', 'string', 'max:255'],
+            'edit_config.subtitle_position' => ['sometimes', Rule::in(['top', 'middle', 'bottom'])],
+            'edit_config.subtitle_offset_sec' => ['sometimes', 'numeric', 'between:-2,2'],
             'edit_config.cuts' => ['sometimes', 'array'],
             'edit_config.cuts.*.start' => ['required_with:edit_config.cuts', 'numeric', 'min:0'],
             'edit_config.cuts.*.end' => ['required_with:edit_config.cuts', 'numeric', 'min:0'],

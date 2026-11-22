@@ -101,21 +101,29 @@ export function splitViralSubtitles(subtitles, { maxWordsPerLine = 3 } = {}) {
 
 /**
  * Ambil subtitle yang beririsan dengan klip, clamp batasnya, lalu geser ke 00:00.
+ * Default kompensasi lead -0.18s untuk mengimbangi jeda auto-caption.
  * Opsional: pecah ke potongan viral pendek jika viral: true.
  */
-export function shiftSubtitles(segments, startSec, endSec, { viral = false, maxWords = 3 } = {}) {
+export function shiftSubtitles(segments, startSec, endSec, { viral = false, maxWords = 3, leadCompensation = 0.18 } = {}) {
   if (!Array.isArray(segments)) throw new TypeError('segments harus array');
   if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
     throw new RangeError('Rentang subtitle tidak valid');
   }
 
+  const comp = Number.isFinite(leadCompensation) ? Math.max(0, leadCompensation) : 0;
+
   const shifted = segments
     .filter(({ start, end }) => end > startSec && start < endSec)
-    .map(({ start, end, text }) => ({
-      start: rounded(Math.max(start, startSec) - startSec),
-      end: rounded(Math.min(end, endSec) - startSec),
-      text,
-    }));
+    .map(({ start, end, text }) => {
+      const s = Math.max(0, Math.max(start, startSec) - startSec - comp);
+      const e = Math.max(0, Math.min(end, endSec) - startSec - comp);
+      return {
+        start: rounded(s),
+        end: rounded(e),
+        text: sanitizeAssText(text),
+      };
+    })
+    .filter(({ start, end }) => end > start);
 
   return viral ? splitViralSubtitles(shifted, { maxWordsPerLine: maxWords }) : shifted;
 }
@@ -152,17 +160,58 @@ export function assColour(hex, alpha = '00') {
   return `&H${alpha}${rgb.slice(4, 6)}${rgb.slice(2, 4)}${rgb.slice(0, 2)}`.toUpperCase();
 }
 
-/** Serialisasi subtitle ke ASS dasar dengan dukungan highlight kata viral. */
+/**
+ * Sanitasi teks untuk ASS: hapus kurung kurawal (pemicu tag override), backslash,
+ * dan newline. Mencegah artefak tag rusak seperti "12)}" tercetak di layar.
+ */
+export function sanitizeAssText(input) {
+  return String(input ?? '')
+    .replace(/\\[Nnh]/g, ' ')
+    .replace(/[{}\\]/g, '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Sanitasi teks untuk filter FFmpeg drawtext (: ' % \). */
+export function sanitizeDrawtext(input) {
+  return String(input ?? '')
+    .replace(/\\/g, '')
+    .replace(/'/g, '\u2019')
+    .replace(/:/g, '\\:')
+    .replace(/%/g, '\\%')
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
+}
+
+/** Margin & alignment ASS (PlayRes 1080x1920) berdasarkan posisi subtitle. */
+export function subtitleLayout(position = 'bottom', hookBannerEnabled = false) {
+  if (position === 'middle') return { alignment: 5, marginV: 0 };
+  if (position === 'top') return { alignment: 8, marginV: hookBannerEnabled ? 340 : 160 };
+  return { alignment: 2, marginV: 240 };
+}
+
+/** Serialisasi subtitle ke ASS dasar dengan dukungan highlight kata viral & hook banner bersih. */
 export function toAss(subtitles, {
   fontName = 'Montserrat',
   fontSize = 42,
   alignment = 2,
+  marginV = 240,
+  offsetSec = 0,
+  bannerText = null,
+  bannerDurationSec = 0,
   primaryColour = '&H00FFFFFF',
   highlightColour = '&H0000E6FF', // Kuning terang ASS (&HAABBGGRR)
   highlightKeywords = [],
   playResX = 1080,
   playResY = 1920,
 } = {}) {
+  const cleanBanner = bannerText ? sanitizeAssText(bannerText).toUpperCase() : null;
+  const bannerMarginV = playResY < playResX ? Math.round((120 * playResY) / 1920) : 120;
+  const bannerStyle = cleanBanner
+    ? `Style: Banner,${fontName},54,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,8,40,40,${bannerMarginV},1\n`
+    : '';
+
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${playResX}
@@ -170,32 +219,42 @@ PlayResY: ${playResY}
 
 [V4+ Styles]
 Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
-Style: Default,${fontName},${fontSize},${primaryColour},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,${alignment},20,20,40,1
-
+Style: Default,${fontName},${fontSize},${primaryColour},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,${alignment},20,20,${marginV},1
+${bannerStyle}
 [Events]
 Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text`;
 
   const kwSet = new Set((highlightKeywords || []).map((k) => String(k).toUpperCase().trim()));
+  const offset = Number(offsetSec) || 0;
 
-  const events = subtitles.map(({ start, end, text }) => {
-    let processedText = String(text ?? '').toUpperCase().trim();
+  const events = [];
 
-    // Jika kata cocok dengan highlight_keywords, beri tag warna highlight
-    if (kwSet.size > 0) {
-      const words = processedText.split(/\s+/);
-      const highlighted = words.map((w) => {
+  // Jika ada bannerText, tambahkan baris banner dengan Style: Banner (tanpa tag override \pos yang rentan rusak)
+  if (cleanBanner) {
+    events.push(`Dialogue: 1,0:00:00.00,${assTime(bannerDurationSec || 3600)},Banner,,0,0,0,,${cleanBanner}`);
+  }
+
+  const subEvents = subtitles
+    .map(({ start, end, text }) => ({
+      start: Math.max(0, Number(start) + offset),
+      end: Math.max(0, Number(end) + offset),
+      text,
+    }))
+    .filter((c) => c.end > c.start)
+    .map(({ start, end, text }) => {
+      const clean = sanitizeAssText(text).toUpperCase();
+      const words = clean.split(' ').filter(Boolean);
+      const processed = words.map((w) => {
         const cleanWord = w.replace(/[^A-Z0-9]/g, '');
-        if (kwSet.has(cleanWord)) {
-          return `{\\c${highlightColour}&}${w}{\\c${primaryColour}&}`;
-        }
-        return w;
-      });
-      processedText = highlighted.join(' ');
-    }
+        return kwSet.has(cleanWord)
+          ? `{\\c${highlightColour}&}${w}{\\c${primaryColour}&}`
+          : w;
+      }).join(' ');
 
-    const escaped = processedText.replace(/\\(?!c|N)/g, '\\\\').replace(/\r?\n/g, '\\N');
-    return `Dialogue: 0,${assTime(start)},${assTime(end)},Default,,0,0,0,,${escaped}`;
-  });
+      return `Dialogue: 0,${assTime(start)},${assTime(end)},Default,,0,0,0,,${processed}`;
+    });
+
+  events.push(...subEvents);
 
   return `${header}\n${events.join('\n')}\n`;
 }

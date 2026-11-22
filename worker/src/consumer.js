@@ -154,8 +154,11 @@ export async function prepareClip(job, {
     return { skipped: true };
   }
 
-  // Idempoten: sudah pernah dipotong dan file masih ada -> cukup tandai ready.
-  if (clip.raw_clip_path && await fileExists(clip.raw_clip_path)) {
+  const isForce = Boolean(job.force);
+
+  // Idempoten: sudah pernah dipotong dan file masih ada -> cukup tandai ready kecuali jika force === true.
+  const hasExistingFile = clip.raw_clip_path && await fileExists(clip.raw_clip_path);
+  if (!isForce && hasExistingFile) {
     await db.markClipReady(clip.id, { rawClipPath: clip.raw_clip_path });
     return { skipped: true };
   }
@@ -173,18 +176,24 @@ export async function prepareClip(job, {
     const subtitles = shiftSubtitles(Object.values(segmentMap ?? {}), clip.start_sec, clip.end_sec, { viral: true, maxWords: 3 });
     const clipDur = Number((Number(clip.end_sec) - Number(clip.start_sec)).toFixed(2));
 
-    // Upload lokal: potong langsung dari file video lokal via FFmpeg, tanpa yt-dlp.
-    const isLocalUpload = project.source_type === 'upload' && project.local_video_path;
     let clipPath;
-    if (isLocalUpload) {
-      const videoAbsPath = resolve(projectRoot, project.local_video_path);
-      ({ clipPath } = await clipLocalFile(videoAbsPath, clip.start_sec, clip.end_sec, {
-        clipId: `clip-${clip.id}`,
-      }));
+    if (isForce && hasExistingFile) {
+      // Lewati download ulang jika file mentah sudah ada
+      clipPath = clip.raw_clip_path;
+      log(`[prepareClip] Menjalankan ulang Auto-Editor Agent (force: true) pada file ${clipPath}`);
     } else {
-      ({ clipPath } = await clipSegment(project.youtube_url, clip.start_sec, clip.end_sec, {
-        clipId: `clip-${clip.id}`,
-      }));
+      // Upload lokal: potong langsung dari file video lokal via FFmpeg, tanpa yt-dlp.
+      const isLocalUpload = project.source_type === 'upload' && project.local_video_path;
+      if (isLocalUpload) {
+        const videoAbsPath = resolve(projectRoot, project.local_video_path);
+        ({ clipPath } = await clipLocalFile(videoAbsPath, clip.start_sec, clip.end_sec, {
+          clipId: `clip-${clip.id}`,
+        }));
+      } else {
+        ({ clipPath } = await clipSegment(project.youtube_url, clip.start_sec, clip.end_sec, {
+          clipId: `clip-${clip.id}`,
+        }));
+      }
     }
 
     // Jalankan Autonomous Auto-Editor Agent untuk framing visual & semantic pacing
@@ -202,12 +211,13 @@ export async function prepareClip(job, {
       log(`[AutoEditorAgent] Error: ${agentErr.message}. Fallback ke default jump cuts.`);
     }
 
+    // Inisialisasi cuts sebagai 1 segmen utuh [0..clipDur] agar video tidak terpotong otomatis
+    const wholeClipCut = [{ start: 0, end: Number(clipDur.toFixed(3)), active: true }];
     const currentConfig = clip.edit_config_json ?? {};
-    const autoCuts = detectJumpCuts(subtitles, clipDur, { minGapSec: 1.2, bufferSec: 0.15 });
 
     const updatedConfig = agentConfig || {
       ...currentConfig,
-      cuts: currentConfig.cuts && currentConfig.cuts.length > 0 ? currentConfig.cuts : autoCuts,
+      cuts: currentConfig.cuts && currentConfig.cuts.length > 0 ? currentConfig.cuts : wholeClipCut,
       trim_start: 0,
       trim_end: Number(clipDur.toFixed(3)),
     };
