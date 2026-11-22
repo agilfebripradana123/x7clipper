@@ -356,24 +356,25 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, CSS 32.10 kB / JS 279.13 kB).
 - **Status:** Selesai (Fase 5 tuntas & seluruh MVP Fase 0 s/d 5 selesai!).
 
-## [2026-11-21] Font Viral Terpisah & Rekomendasi Caption Gen Z (Fase 8)
-- **Tujuan:** 6 font viral open-source TTF, pembaca nama internal OpenType `name`, escaping Windows `fontsdir`, pemilih font terpisah untuk `hook_font` dan `subtitle_font`, AI caption generator Gen Z + 3 hashtag, endpoint `POST /api/clips/{id}/caption`, dan 1-click copy caption di UI Web Editor.
+## [2026-11-21] Font Viral Terpisah, Caption Gen Z 9router & Stabilitas Preview/Auto-Save (Fase 8)
+- **Tujuan:** 6 font viral open-source TTF, pembaca nama internal OpenType `name`, escaping Windows `fontsdir`, pemilih font terpisah untuk `hook_font` dan `subtitle_font`, AI caption generator Gen Z + 3 hashtag via 9router dengan fallback baca root `.env`, perbaikan auto-save `AbortController` + debounce 800ms + `withoutMiddleware('throttle')`, serta single-stream `<video>` + `<canvas>` blur background.
 - **File diubah/ditambah:**
   - `storage/fonts/` & `frontend/public/fonts/` — bundle 6 font TTF (Montserrat-ExtraBold, Poppins-Black, Anton-Regular, BebasNeue-Regular, Oswald-Bold, PlusJakartaSans-ExtraBold).
   - `worker/src/fonts.js` — parser tabel OpenType `name` (`readTtfFontName`), map `VIRAL_FONTS`, dan resolver nama keluarga font `getFontNameFromFile`.
   - `worker/src/renderer.js` — render banner dengan `hook_font` dan subtitle dengan `subtitle_font`, normalisasi path Windows `fontsdir` (`D\:/...`).
   - `worker/src/subtitleShift.js` — `toAss()` menerima `bannerFontName` dan `fontName` terpisah untuk style banner dan default.
   - `worker/src/ninerouter.js` & `worker/src/validator.js` — system prompt menghasilkan `suggested_caption` gaya Gen Z Indonesia + 3 hashtag relevan.
-  - `backend/app/Http/Controllers/Api/ClipController.php` — validasi `hook_font` & `subtitle_font`, update `suggested_caption`, dan endpoint `generateCaption()` (`POST /api/clips/{clip}/caption`).
-  - `backend/routes/api.php` — rute `POST /api/clips/{clip}/caption`.
-  - `backend/tests/Feature/Api/ClipCaptionApiTest.php` — feature test generate caption Gen Z + 3 hashtag dan config font.
+  - `backend/config/services.php` & `backend/.env.example` — konfigurasi `services.ninerouter` dengan fallback otomatis membaca root `.env` (`base_path('../.env')`).
+  - `backend/app/Http/Controllers/Api/ClipController.php` — validasi fleksibel `edit_config`, endpoint `generateCaption()` dengan `temperature: 0.85` tanpa template statis + respons `502` saat 9router gagal, dan pembersihan output buffer di `video()`.
+  - `backend/routes/api.php` — `withoutMiddleware('throttle')` pada `PATCH /api/clips/{clip}/config` dan rute `POST /api/clips/{clip}/caption`.
+  - `backend/tests/Feature/Api/ClipCaptionApiTest.php` — feature test dengan `Http::fake()` untuk verifikasi request transkrip ke 9router, penyimpanan `suggested_caption`, dan error `502` saat gagal.
   - `frontend/src/index.css` — pendaftaran `@font-face` untuk keenam font TTF.
-  - `frontend/src/components/Editor.jsx` — pemilih font Hook Banner (Tab Gaya & Hook), pemilih font Subtitle (Tab Subtitle), panel Rekomendasi Caption Gen Z + 3 hashtag di Tab Export dengan tombol 1-klik Salin Caption dan Buat Ulang Caption.
-  - `frontend/src/api.js` — client method `regenerateCaption()`.
+  - `frontend/src/components/Editor.jsx` — single-stream `<video>` + `<canvas>` blur background, `isSeekingRef` guard untuk auto-skip, `AbortController` + debounce 800ms untuk auto-save dengan tombol `Coba Lagi`, pemilih font Hook Banner & Subtitle, serta panel Caption Medsos.
+  - `frontend/src/api.js` — dukungan `options` (`signal`) pada `patchClipConfig()` dan method `regenerateCaption()`.
 - **Hasil uji:**
-  - `php artisan test` — **PASS 41/41 (189 assertions)**.
+  - `php artisan test` — **PASS 42/42 (191 assertions)**.
   - `npm test` (worker) — **PASS 87/87**.
-  - `npm run build` (frontend) — **PASS** (33 modules, JS 288.74 kB).
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 290.61 kB).
 - **Status:** Selesai (Fase 8 tuntas).
 
 

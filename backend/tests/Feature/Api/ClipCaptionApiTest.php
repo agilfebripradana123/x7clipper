@@ -5,6 +5,7 @@ namespace Tests\Feature\Api;
 use App\Models\Clip;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class ClipCaptionApiTest extends TestCase
@@ -31,21 +32,65 @@ class ClipCaptionApiTest extends TestCase
         ]);
     }
 
-    public function test_generate_caption_creates_gen_z_caption_with_hashtags(): void
+    public function test_generate_caption_calls_9router_with_transcript_and_saves_result(): void
     {
+        config([
+            'services.ninerouter.base_url' => 'https://api.9router.test/v1',
+            'services.ninerouter.api_key' => 'fake-key',
+            'services.ninerouter.model' => 'test-model',
+        ]);
+
+        Http::fake([
+            'https://api.9router.test/v1/chat/completions' => Http::response([
+                'choices' => [
+                    [
+                        'message' => [
+                            'content' => "Gila sih relate parah! Komen di bawah menurut kalian gimana? #fyp #viral #sukses",
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
         $clip = $this->makeClip();
 
         $response = $this->postJson("/api/clips/{$clip->id}/caption");
 
         $response->assertOk()
-            ->assertJsonPath('data.id', $clip->id);
+            ->assertJsonPath('data.id', $clip->id)
+            ->assertJsonPath('data.suggested_caption', 'Gila sih relate parah! Komen di bawah menurut kalian gimana? #fyp #viral #sukses');
 
-        $caption = $response->json('data.suggested_caption');
-        $this->assertNotEmpty($caption);
-        $this->assertStringContainsString('#', $caption);
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+            $messages = $body['messages'] ?? [];
+            $userContent = $messages[1]['content'] ?? '';
+            return str_contains($userContent, 'Rahasia Sukses Bisnis')
+                && str_contains($userContent, 'ini rahasia sukses')
+                && $body['temperature'] === 0.85;
+        });
 
         $clip->refresh();
-        $this->assertSame($caption, $clip->suggested_caption);
+        $this->assertSame('Gila sih relate parah! Komen di bawah menurut kalian gimana? #fyp #viral #sukses', $clip->suggested_caption);
+    }
+
+    public function test_generate_caption_returns_502_when_9router_fails(): void
+    {
+        config([
+            'services.ninerouter.base_url' => 'https://api.9router.test/v1',
+            'services.ninerouter.api_key' => 'fake-key',
+            'services.ninerouter.model' => 'test-model',
+        ]);
+
+        Http::fake([
+            'https://api.9router.test/v1/chat/completions' => Http::response('Rate limit exceeded', 429),
+        ]);
+
+        $clip = $this->makeClip();
+
+        $response = $this->postJson("/api/clips/{$clip->id}/caption");
+
+        $response->assertStatus(502)
+            ->assertJsonPath('message', fn ($msg) => str_contains($msg, 'Gagal terhubung ke 9router'));
     }
 
     public function test_update_config_accepts_suggested_caption_and_fonts(): void

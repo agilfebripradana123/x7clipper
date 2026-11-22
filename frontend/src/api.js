@@ -76,10 +76,11 @@ export async function deleteProject(id) {
   return res
 }
 
-export function patchClipConfig(clipId, payload) {
+export function patchClipConfig(clipId, payload, options = {}) {
   return request(`/clips/${clipId}/config`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+    ...options,
   })
 }
 

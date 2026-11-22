@@ -141,10 +141,12 @@ export default function Editor({ clip, onBack }) {
   const [caption, setCaption] = useState(clip.suggested_caption || '')
   const [captionCopied, setCaptionCopied] = useState(false)
   const [regeneratingCaption, setRegeneratingCaption] = useState(false)
+  const [captionError, setCaptionError] = useState(null)
 
   const handleRegenerateCaption = async () => {
     if (regeneratingCaption) return
     setRegeneratingCaption(true)
+    setCaptionError(null)
     try {
       const data = await regenerateCaption(currentClip.id)
       if (data?.suggested_caption) {
@@ -153,7 +155,7 @@ export default function Editor({ clip, onBack }) {
         setSaveState('saved')
       }
     } catch (err) {
-      alert(`Gagal membuat caption: ${err.message}`)
+      setCaptionError(err?.body?.message || err?.message || 'Gagal terhubung ke 9router.')
     } finally {
       setRegeneratingCaption(false)
     }
@@ -220,16 +222,44 @@ export default function Editor({ clip, onBack }) {
 
   const [autoEditing, setAutoEditing] = useState(false)
   const [currentClip, setCurrentClip] = useState(clip)
+  const [isBuffering, setIsBuffering] = useState(false)
 
   const videoRef = useRef(null)
-  const bgVideoRef = useRef(null)
+  const canvasRef = useRef(null)
   const stageRef = useRef(null)
   const timelineTrackRef = useRef(null)
   const isDraggingPlayhead = useRef(false)
   const isDraggingCrop = useRef(false)
+  const isSeekingRef = useRef(false)
+  const abortControllerRef = useRef(null)
   const dragStartCrop = useRef({ startX: 0, initialCrop: 0 })
 
   const isBlur = layoutMode === 'blur' || layoutMode === 'blur_bg'
+
+  const drawBlurFrame = () => {
+    if (!isBlur || !canvasRef.current || !videoRef.current) return
+    const v = videoRef.current
+    if (v.readyState < 2) return
+    const ctx = canvasRef.current.getContext('2d')
+    if (ctx) {
+      try {
+        ctx.drawImage(v, 0, 0, canvasRef.current.width, canvasRef.current.height)
+      } catch {
+        /* ignore decode errors */
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!isBlur || !playing) return
+    let animId
+    const loop = () => {
+      drawBlurFrame()
+      animId = requestAnimationFrame(loop)
+    }
+    animId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(animId)
+  }, [isBlur, playing])
 
   // Trigger Run Auto-Editor Agent (force: true)
   const handleRunAutoEditor = async () => {
@@ -337,45 +367,34 @@ export default function Editor({ clip, onBack }) {
     const v = videoRef.current
     if (!v) return
     const clamped = clamp(t, 0, duration)
+    isSeekingRef.current = true
     try {
       v.currentTime = clamped
-      if (bgVideoRef.current) bgVideoRef.current.currentTime = clamped
     } catch { /* ignore */ }
     setCurrentTime(clamped)
   }
 
-  // Auto-skip inactive segments during playback
+  // Auto-skip inactive segments during playback with isSeekingRef guard
   const handleTimeUpdate = () => {
     const v = videoRef.current
     if (!v) return
     const t = v.currentTime
     setCurrentTime(t)
+    drawBlurFrame()
 
-    // Sync background video if blur mode
-    if (bgVideoRef.current) {
-      if (Math.abs(bgVideoRef.current.currentTime - t) > 0.15) {
-        bgVideoRef.current.currentTime = t
-      }
-      if (bgVideoRef.current.paused !== v.paused) {
-        if (v.paused) bgVideoRef.current.pause()
-        else bgVideoRef.current.play().catch(() => {})
-      }
-    }
+    if (isSeekingRef.current || v.seeking || isBuffering) return
 
     const activeCuts = cuts.filter((c) => c.active)
     const inActiveCut = activeCuts.some((c) => t >= c.start && t < c.end)
 
     if (!inActiveCut && activeCuts.length > 0) {
       const nextCut = activeCuts.find((c) => c.start > t)
-      if (nextCut) {
-        v.currentTime = nextCut.start
-        if (bgVideoRef.current) bgVideoRef.current.currentTime = nextCut.start
-        setCurrentTime(nextCut.start)
-      } else {
-        v.currentTime = activeCuts[0].start
-        if (bgVideoRef.current) bgVideoRef.current.currentTime = activeCuts[0].start
-        setCurrentTime(activeCuts[0].start)
-      }
+      const targetSec = nextCut ? nextCut.start : activeCuts[0].start
+      isSeekingRef.current = true
+      try {
+        v.currentTime = targetSec
+      } catch { /* ignore */ }
+      setCurrentTime(targetSec)
     }
   }
 
@@ -384,19 +403,17 @@ export default function Editor({ clip, onBack }) {
     if (!v || videoError) return
     if (!v.paused) {
       v.pause()
-      if (bgVideoRef.current) bgVideoRef.current.pause()
       return
     }
     const activeCuts = cuts.filter((c) => c.active)
     const inCut = activeCuts.some((c) => v.currentTime >= c.start && v.currentTime < c.end)
     if (!inCut && activeCuts.length > 0) {
+      isSeekingRef.current = true
       v.currentTime = activeCuts[0].start
-      if (bgVideoRef.current) bgVideoRef.current.currentTime = activeCuts[0].start
       setCurrentTime(activeCuts[0].start)
     }
     try {
       await v.play()
-      if (bgVideoRef.current) bgVideoRef.current.play().catch(() => {})
     } catch { /* ignore */ }
   }
 
@@ -570,67 +587,98 @@ export default function Editor({ clip, onBack }) {
     try { e.currentTarget.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
   }
 
-  // Debounced Auto-Save
+  // Debounced Auto-Save (800ms)
   useEffect(() => {
     if (saveState !== 'idle') return
     const timer = setTimeout(() => {
       handleSave()
-    }, 1200)
+    }, 800)
     return () => clearTimeout(timer)
   }, [cuts, cropX, layoutMode, hookBanner, hookFont, subtitleFont, caption, subtitle, subtitleFontSize, rows, aspectRatio, saveState])
 
   const handleSave = async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     const errors = validateRows(rows, duration)
     if (Object.keys(errors).length > 0) {
       setRowErrors(errors)
-      setSaveError('Periksa baris subtitle yang ditandai.')
+      setSaveError('422: Periksa baris subtitle yang ditandai.')
       setSaveState('error')
       return
     }
 
     const sortedSubs = rows
-      .map((r) => ({ start: round3(Number(r.start)), end: round3(Number(r.end)), text: String(r.text).trim() }))
+      .map((r) => ({
+        start: clamp(round3(Number(r.start)), 0, duration),
+        end: clamp(round3(Number(r.end)), 0, duration + 0.5),
+        text: String(r.text).trim(),
+      }))
+      .filter((r) => r.end > r.start && r.text.length > 0)
       .sort((a, b) => a.start - b.start)
 
     const sortedCuts = cuts
-      .map((c) => ({ start: round3(c.start), end: round3(c.end), active: c.active !== false }))
+      .map((c) => ({
+        start: clamp(round3(Number(c.start ?? 0)), 0, duration),
+        end: clamp(round3(Number(c.end ?? duration)), 0, duration),
+        active: c.active !== false,
+      }))
+      .filter((c) => c.end > c.start)
       .sort((a, b) => a.start - b.start)
+
+    const safeCuts = sortedCuts.length > 0 ? sortedCuts : [{ start: 0, end: duration, active: true }]
+    const safeCropX = clamp(round3(Number(cropX) || 0.5), 0, 1)
+    const safeOffset = clamp(round2(Number(subtitle.offset_sec) || 0), -2, 2)
+    const safeFontSize = clamp(Math.round(Number(subtitleFontSize)) || 64, 32, 96)
 
     setSaveState('saving')
     setSaveError(null)
 
     try {
-      await patchClipConfig(clip.id, {
-        edit_config: {
-          aspect_ratio: aspectRatio,
-          crop_x: round3(cropX),
-          layout_mode: layoutMode,
-          hook_banner: {
-            enabled: hookBanner.enabled,
-            text: hookBanner.text.trim(),
+      await patchClipConfig(
+        clip.id,
+        {
+          edit_config: {
+            aspect_ratio: ['9:16', '1:1', '4:3', '16:9'].includes(aspectRatio) ? aspectRatio : '9:16',
+            crop_x: safeCropX,
+            layout_mode: layoutMode,
+            hook_banner: {
+              enabled: Boolean(hookBanner.enabled),
+              text: String(hookBanner.text || '').trim(),
+            },
+            hook_font: hookFont,
+            subtitle_font: subtitleFont,
+            cuts: safeCuts,
+            subtitle_position: subtitle.position,
+            subtitle_offset_sec: safeOffset,
+            subtitle_font_size: safeFontSize,
+            subtitle: {
+              enabled: Boolean(subtitle.enabled),
+              position: subtitle.position,
+              font_size: safeFontSize,
+              color: HEX.test(subtitle.color) ? subtitle.color.toUpperCase() : '#FFFFFF',
+              highlight_color: HEX.test(subtitle.highlight_color) ? subtitle.highlight_color.toUpperCase() : '#FFE600',
+              highlight_keywords: subtitle.highlight_keywords,
+              offset_sec: safeOffset,
+            },
           },
-          hook_font: hookFont,
-          subtitle_font: subtitleFont,
-          cuts: sortedCuts,
-          subtitle_position: subtitle.position,
-          subtitle_offset_sec: round2(subtitle.offset_sec ?? 0),
-          subtitle_font_size: subtitleFontSize,
-          subtitle: {
-            enabled: subtitle.enabled,
-            position: subtitle.position,
-            font_size: subtitleFontSize,
-            color: HEX.test(subtitle.color) ? subtitle.color.toUpperCase() : '#FFFFFF',
-            highlight_color: HEX.test(subtitle.highlight_color) ? subtitle.highlight_color.toUpperCase() : '#FFE600',
-            highlight_keywords: subtitle.highlight_keywords,
-            offset_sec: round2(subtitle.offset_sec ?? 0),
-          },
+          suggested_caption: caption,
+          subtitles: sortedSubs,
         },
-        suggested_caption: caption,
-        subtitles: sortedSubs,
-      })
+        { signal: controller.signal },
+      )
       setSaveState('saved')
     } catch (err) {
-      setSaveError(err?.message || 'Gagal menyimpan.')
+      if (err?.name === 'AbortError') return
+      const status = err?.status ? `${err.status}` : ''
+      const firstValidationErr = err?.body?.errors
+        ? Object.values(err.body.errors).flat()[0]
+        : null
+      const msg = firstValidationErr || err?.message || 'Gagal menyimpan'
+      setSaveError(status ? `${status}: ${msg}` : msg)
       setSaveState('error')
     }
   }
@@ -758,9 +806,37 @@ export default function Editor({ clip, onBack }) {
             )}
           </button>
 
-          <span className={`font-mono text-[11px] ${saveState === 'saved' ? 'text-ok' : saveState === 'saving' ? 'text-accent' : saveState === 'error' ? 'text-fail' : 'text-faint'}`}>
-            {saveState === 'saved' ? '● Tersimpan' : saveState === 'saving' ? '● Menyimpan…' : saveState === 'error' ? '● Gagal' : '● Belum simpan'}
-          </span>
+          <div className="flex items-center gap-1.5 font-mono text-[11px]">
+            <span
+              title={saveError || ''}
+              className={`max-w-[200px] truncate ${
+                saveState === 'saved'
+                  ? 'text-ok'
+                  : saveState === 'saving'
+                    ? 'text-accent'
+                    : saveState === 'error'
+                      ? 'text-fail'
+                      : 'text-faint'
+              }`}
+            >
+              {saveState === 'saved'
+                ? '● Tersimpan'
+                : saveState === 'saving'
+                  ? '● Menyimpan…'
+                  : saveState === 'error'
+                    ? `● Gagal (${saveError || 'Error'})`
+                    : '● Belum simpan'}
+            </span>
+            {saveState === 'error' && (
+              <button
+                type="button"
+                onClick={handleSave}
+                className="rounded border border-fail/40 bg-fail/10 px-1.5 py-0.5 text-[10px] text-fail hover:bg-fail/20"
+              >
+                Coba Lagi
+              </button>
+            )}
+          </div>
 
           <button
             type="button"
@@ -789,32 +865,52 @@ export default function Editor({ clip, onBack }) {
                 !isBlur && geom?.range > 0 ? 'cursor-grab active:cursor-grabbing' : ''
               }`}
             >
-              {/* Blur Background Layer */}
+              {/* Blur Background Layer (1-Stream Canvas Snapshot, Bebas Dual-Stream Bottleneck) */}
               {isBlur && (
-                <video
-                  ref={bgVideoRef}
-                  src={`/api/clips/${clip.id}/video`}
-                  playsInline
-                  muted
+                <canvas
+                  ref={canvasRef}
+                  width={240}
+                  height={426}
                   aria-hidden="true"
                   className="pointer-events-none absolute inset-0 h-full w-full object-cover scale-110 blur-xl brightness-75"
                 />
               )}
 
-              {/* Main Video Layer */}
+              {/* Main Video Layer (Single Stream Source) */}
               <video
                 ref={videoRef}
                 src={`/api/clips/${clip.id}/video`}
                 playsInline
-                preload="metadata"
+                preload="auto"
                 onLoadedMetadata={(e) => {
                   setVideoSize({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })
                   setReady(true)
+                  drawBlurFrame()
                 }}
+                onLoadedData={drawBlurFrame}
                 onTimeUpdate={handleTimeUpdate}
                 onPlay={() => setPlaying(true)}
                 onPause={() => setPlaying(false)}
-                onError={() => setVideoError(true)}
+                onSeeking={() => {
+                  isSeekingRef.current = true
+                }}
+                onSeeked={() => {
+                  isSeekingRef.current = false
+                  setIsBuffering(false)
+                  drawBlurFrame()
+                }}
+                onWaiting={() => setIsBuffering(true)}
+                onStalled={() => setIsBuffering(true)}
+                onPlaying={() => {
+                  isSeekingRef.current = false
+                  setIsBuffering(false)
+                  setPlaying(true)
+                }}
+                onCanPlay={() => setIsBuffering(false)}
+                onError={() => {
+                  setVideoError(true)
+                  setIsBuffering(false)
+                }}
                 style={
                   geom && !isBlur && geom.range > 0
                     ? {
@@ -833,6 +929,16 @@ export default function Editor({ clip, onBack }) {
                 }
                 className={isBlur ? 'relative z-10' : 'relative'}
               />
+
+              {/* Indikator Buffering Halus */}
+              {isBuffering && !videoError && (
+                <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-void/25 backdrop-blur-[1px]">
+                  <div className="flex items-center gap-2 rounded-lg border border-line bg-panel/90 px-3 py-1.5 shadow-lg">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/40 border-t-accent" />
+                    <span className="font-mono text-xs text-ink">Memuat stream…</span>
+                  </div>
+                </div>
+              )}
 
               {/* Hook Banner Live Preview */}
               {hookBanner.enabled && hookBanner.text && (
@@ -1658,11 +1764,17 @@ export default function Editor({ clip, onBack }) {
                   value={caption}
                   onChange={(e) => {
                     setCaption(e.target.value)
+                    setCaptionError(null)
                     setSaveState('idle')
                   }}
                   placeholder="Caption media sosial otomatis..."
                   className="w-full rounded-lg border border-line bg-void px-3 py-2 text-xs font-sans text-ink focus:border-accent focus:outline-none resize-none leading-relaxed"
                 />
+                {captionError && (
+                  <p role="alert" className="mt-1.5 text-[11px] text-fail leading-snug">
+                    {captionError}
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={handleCopyCaption}
