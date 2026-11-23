@@ -139,7 +139,10 @@ class ProjectController extends Controller
 
     public function show(Project $project): JsonResponse
     {
-        $project->load(['clips' => fn ($query) => $query->orderByDesc('viral_score')]);
+        $project->load([
+            'clips' => fn ($query) => $query->orderByDesc('viral_score'),
+            'clips.renderJobs' => fn ($query) => $query->latest(),
+        ]);
 
         return response()->json([
             'data' => [
@@ -152,21 +155,31 @@ class ProjectController extends Controller
                 'status' => $project->status,
                 'error_message' => $project->error_message,
                 'created_at' => $project->created_at?->toISOString(),
-                'clips' => $project->clips->map(fn (Clip $clip) => [
-                    'id' => $clip->id,
-                    'title' => $clip->title,
-                    'start_sec' => $clip->start_sec,
-                    'end_sec' => $clip->end_sec,
-                    'viral_score' => $clip->viral_score,
-                    'hook_type' => $clip->hook_type,
-                    'ai_reason' => $clip->ai_reason,
-                    'suggested_caption' => $clip->suggested_caption,
-                    'raw_clip_path' => $clip->raw_clip_path,
-                    'prepare_status' => $clip->prepare_status,
-                    'prepare_error' => $clip->prepare_error,
-                    'subtitle_json' => $clip->subtitle_json,
-                    'edit_config_json' => $clip->edit_config_json,
-                ])->all(),
+                'clips' => $project->clips->map(function (Clip $clip) {
+                    $latestJob = $clip->renderJobs->first();
+                    return [
+                        'id' => $clip->id,
+                        'title' => $clip->title,
+                        'start_sec' => $clip->start_sec,
+                        'end_sec' => $clip->end_sec,
+                        'viral_score' => $clip->viral_score,
+                        'hook_type' => $clip->hook_type,
+                        'ai_reason' => $clip->ai_reason,
+                        'suggested_caption' => $clip->suggested_caption,
+                        'raw_clip_path' => $clip->raw_clip_path,
+                        'prepare_status' => $clip->prepare_status,
+                        'prepare_error' => $clip->prepare_error,
+                        'subtitle_json' => $clip->subtitle_json,
+                        'edit_config_json' => $clip->edit_config_json,
+                        'latest_render_job' => $latestJob ? [
+                            'id' => $latestJob->id,
+                            'status' => $latestJob->status,
+                            'progress_percent' => $latestJob->progress_percent,
+                            'output_url' => $latestJob->output_url,
+                            'error_message' => $latestJob->error_message,
+                        ] : null,
+                    ];
+                })->all(),
             ],
         ]);
     }

@@ -15,6 +15,57 @@ function getFontFamily(fontKey, fallback = "'Montserrat ExtraBold', sans-serif")
   return found ? found.family : fallback
 }
 
+export function splitViralSubtitlesPreview(subtitles, { maxWordsPerLine = 3 } = {}) {
+  if (!Array.isArray(subtitles)) return []
+  const maxWords = Math.max(1, Math.min(6, Number(maxWordsPerLine) || 3))
+  const result = []
+
+  for (const item of subtitles) {
+    const rawText = String(item.text ?? '').trim()
+    const duration = item.end - item.start
+
+    if (!rawText || duration <= 0) continue
+
+    const words = rawText.split(/\s+/).filter(Boolean)
+    if (words.length <= maxWords) {
+      result.push({
+        start: round3(item.start),
+        end: round3(item.end),
+        text: rawText,
+      })
+      continue
+    }
+
+    const chunks = []
+    for (let i = 0; i < words.length; i += maxWords) {
+      chunks.push(words.slice(i, i + maxWords).join(' '))
+    }
+
+    const totalChars = chunks.reduce((acc, c) => acc + c.length, 0)
+    let currentStart = item.start
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+      const isLast = i === chunks.length - 1
+      const chunkDur = isLast
+        ? item.end - currentStart
+        : duration * (chunk.length / totalChars)
+
+      const chunkEnd = isLast ? item.end : round3(currentStart + chunkDur)
+
+      result.push({
+        start: round3(currentStart),
+        end: round3(chunkEnd),
+        text: chunk,
+      })
+
+      currentStart = chunkEnd
+    }
+  }
+
+  return result
+}
+
 const round1 = (n) => Math.round(n * 10) / 10
 const round2 = (n) => Math.round(n * 100) / 100
 const round3 = (n) => Math.round(n * 1000) / 1000
@@ -216,7 +267,8 @@ export default function Editor({ clip, onBack }) {
   }
 
   const [rowErrors, setRowErrors] = useState({})
-  const [renderJob, setRenderJob] = useState(null)
+  const [renderJob, setRenderJob] = useState(clip.latest_render_job || null)
+  const [previewMode, setPreviewMode] = useState('live') // 'live' | 'mp4'
   const [renderBusy, setRenderBusy] = useState(false)
   const [renderError, setRenderError] = useState(null)
   const [pollNonce, setPollNonce] = useState(0)
@@ -228,6 +280,7 @@ export default function Editor({ clip, onBack }) {
   const [isBuffering, setIsBuffering] = useState(false)
 
   const videoRef = useRef(null)
+  const mp4VideoRef = useRef(null)
   const canvasRef = useRef(null)
   const stageRef = useRef(null)
   const timelineTrackRef = useRef(null)
@@ -541,35 +594,33 @@ export default function Editor({ clip, onBack }) {
     return () => ro.disconnect()
   }, [aspectRatio])
 
-  // Geometri Canvas Stage berdasarkan aspectRatio dinamis
+  // Geometri Canvas Stage berdasarkan aspectRatio dan virtualDims (1080p target FFmpeg)
   const geom = useMemo(() => {
     const sw = stageSize.w
     const sh = stageSize.h
     const vw = videoSize.w || 1920
     const vh = videoSize.h || 1080
-    if (!sw || !sh) return null
+    if (!sw || !sh || !virtualDims.w || !virtualDims.h) return null
 
     const videoAspect = vw / vh
-    const stageAspect = sw / sh
+    const targetAspect = virtualDims.w / virtualDims.h
 
+    // Pada kanvas virtual (virtualDims.w x virtualDims.h):
     let dispW, dispH, range
-    if (videoAspect >= stageAspect) {
-      dispH = sh
-      dispW = sh * videoAspect
-      range = Math.max(0, dispW - sw)
+    if (videoAspect >= targetAspect) {
+      dispH = virtualDims.h
+      dispW = virtualDims.h * videoAspect
+      range = Math.max(0, dispW - virtualDims.w)
     } else {
-      dispW = sw
-      dispH = sw / videoAspect
+      dispW = virtualDims.w
+      dispH = virtualDims.w / videoAspect
       range = 0
     }
 
-    const frameW = sw
-    const frameH = sh
+    return { dispW, dispH, range, videoAspect, targetAspect }
+  }, [stageSize, videoSize, virtualDims])
 
-    return { dispW, dispH, frameW, frameH, range, videoAspect, stageAspect }
-  }, [stageSize, videoSize, aspectRatio])
-
-  // Drag-to-Pan Crop
+  // Drag-to-Pan Crop (diukur terhadap ukuran riil di layar)
   const handlePointerDownCanvas = (e) => {
     if (isBlur || !geom || geom.range <= 0) return
     isDraggingCrop.current = true
@@ -578,9 +629,11 @@ export default function Editor({ clip, onBack }) {
   }
 
   const handlePointerMoveCanvas = (e) => {
-    if (!isDraggingCrop.current || !geom?.range) return
+    if (!isDraggingCrop.current || !geom?.range || !stageScale) return
+    const screenRange = geom.range * stageScale
+    if (screenRange <= 0) return
     const deltaX = e.clientX - dragStartCrop.current.startX
-    const newCrop = clamp(dragStartCrop.current.initialCrop - deltaX / geom.range, 0, 1)
+    const newCrop = clamp(dragStartCrop.current.initialCrop - deltaX / screenRange, 0, 1)
     setCropX(round3(newCrop))
     setSaveState('idle')
   }
@@ -742,14 +795,69 @@ export default function Editor({ clip, onBack }) {
     }
   }, [renderJob?.id, renderJob?.status, pollNonce])
 
-  const activeSub = subtitle.enabled
-    ? rows.find((r) => {
-        const s = Number(r.start)
-        const e = Number(r.end)
-        const effectiveTime = currentTime - (Number(subtitle.offset_sec) || 0)
-        return effectiveTime >= s && effectiveTime < e && String(r.text).trim().length > 0
-      })
-    : null
+  // Dimensi virtual canvas 1:1 identik dengan FFmpeg PlayRes
+  const virtualDims = useMemo(() => {
+    switch (aspectRatio) {
+      case '1:1':
+        return { w: 1080, h: 1080 }
+      case '4:3':
+        return { w: 1440, h: 1080 }
+      case '16:9':
+        return { w: 1920, h: 1080 }
+      case '9:16':
+      default:
+        return { w: 1080, h: 1920 }
+    }
+  }, [aspectRatio])
+
+  // Scale factor kanvas virtual ke kontainer preview
+  const stageScale = useMemo(() => {
+    if (!stageSize.w || !virtualDims.w) return 1
+    return stageSize.w / virtualDims.w
+  }, [stageSize.w, virtualDims.w])
+
+  // Subtitle chunking 2-3 kata per baris identik dengan splitViralSubtitles di worker
+  const activeViralSub = useMemo(() => {
+    if (!subtitle.enabled) return null
+    const effectiveTime = currentTime - (Number(subtitle.offset_sec) || 0)
+    const validRows = rows
+      .filter((r) => String(r.text ?? '').trim().length > 0)
+      .map((r) => ({
+        start: Number(r.start) || 0,
+        end: Number(r.end) || 0,
+        text: String(r.text ?? '').trim(),
+      }))
+      .filter((r) => r.end > r.start)
+
+    const chunks = splitViralSubtitlesPreview(validRows, { maxWordsPerLine: 3 })
+    return chunks.find((c) => effectiveTime >= c.start && effectiveTime < c.end) || null
+  }, [subtitle.enabled, subtitle.offset_sec, currentTime, rows])
+
+  // Perhitungan layout margin vertical identik dengan subtitleLayout di subtitleShift.js
+  const subtitleVirtualMarginV = useMemo(() => {
+    const scale = virtualDims.h / 1920
+    if (subtitle.position === 'middle') return 0
+    if (subtitle.position === 'top') {
+      const raw = hookBanner.enabled && hookBanner.text ? 340 : 160
+      return Math.round(raw * scale)
+    }
+    return Math.round(240 * scale)
+  }, [subtitle.position, hookBanner.enabled, hookBanner.text, virtualDims.h])
+
+  const bannerVirtualMarginV = useMemo(() => {
+    const scale = virtualDims.h / 1920
+    return Math.round(120 * scale)
+  }, [virtualDims.h])
+
+  const bannerVirtualFontSize = useMemo(() => {
+    const scale = virtualDims.w / 1080
+    return Math.round(54 * scale)
+  }, [virtualDims.w])
+
+  const subtitleVirtualFontSize = useMemo(() => {
+    const scale = virtualDims.w / 1080
+    return Math.round(scale * subtitleFontSize)
+  }, [virtualDims.w, subtitleFontSize])
 
   const totalOutputDuration = cuts
     .filter((c) => c.active)
@@ -768,22 +876,16 @@ export default function Editor({ clip, onBack }) {
   const stageAspectStyle = useMemo(() => {
     switch (aspectRatio) {
       case '1:1':
-        return { aspectRatio: '1 / 1', maxHeight: '500px' }
+        return { aspectRatio: '1 / 1', maxHeight: '520px' }
       case '4:3':
-        return { aspectRatio: '4 / 3', maxHeight: '460px' }
+        return { aspectRatio: '4 / 3', maxHeight: '500px' }
       case '16:9':
-        return { aspectRatio: '16 / 9', maxHeight: '400px' }
+        return { aspectRatio: '16 / 9', maxHeight: '460px' }
       case '9:16':
       default:
-        return { aspectRatio: '9 / 16', maxHeight: '550px' }
+        return { aspectRatio: '9 / 16', maxHeight: '560px' }
     }
   }, [aspectRatio])
-
-  // Proporsional font size preview (lebar frame / 1080 * subtitle_font_size)
-  const previewFontPx = useMemo(() => {
-    const baseW = stageSize.w || 360
-    return clamp(Math.round((baseW / 1080) * subtitleFontSize), 14, 48)
-  }, [stageSize.w, subtitleFontSize])
 
   return (
     <div className="flex flex-col gap-4">
@@ -871,8 +973,36 @@ export default function Editor({ clip, onBack }) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         {/* Kolom Kiri: Canvas + Timeline (lg:col-span-8) */}
         <div className="flex flex-col gap-3 lg:col-span-8">
-          {/* Canvas Preview Stage (Dinamis sesuai Aspect Ratio) */}
-          <div className="flex w-full items-center justify-center bg-void/60 rounded-2xl border border-line/50 p-2">
+          {/* Canvas Preview Stage (Dinamis sesuai Aspect Ratio & Virtual 1080p Canvas) */}
+          <div className="flex flex-col gap-2 w-full items-center justify-center bg-void/60 rounded-2xl border border-line/50 p-2">
+            {/* Toggle Preview Editan vs Hasil Render MP4 */}
+            {renderJob?.status === 'done' && (
+              <div className="flex items-center gap-1.5 self-center rounded-lg border border-line bg-panel/90 p-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode('live')}
+                  className={`rounded px-2.5 py-1 font-medium transition ${
+                    previewMode === 'live'
+                      ? 'bg-accent text-void font-bold shadow-sm'
+                      : 'text-muted hover:text-ink'
+                  }`}
+                >
+                  Live Preview Editan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode('mp4')}
+                  className={`rounded px-2.5 py-1 font-medium transition ${
+                    previewMode === 'mp4'
+                      ? 'bg-accent text-void font-bold shadow-sm'
+                      : 'text-muted hover:text-ink'
+                  }`}
+                >
+                  Hasil Render MP4
+                </button>
+              </div>
+            )}
+
             <div
               ref={stageRef}
               style={stageAspectStyle}
@@ -881,145 +1011,192 @@ export default function Editor({ clip, onBack }) {
               onPointerUp={handlePointerUpCanvas}
               onPointerCancel={handlePointerUpCanvas}
               className={`relative mx-auto flex w-full items-center justify-center overflow-hidden rounded-xl border border-line bg-void shadow-2xl transition-[aspect-ratio] duration-300 ${
-                !isBlur && geom?.range > 0 ? 'cursor-grab active:cursor-grabbing' : ''
+                previewMode === 'live' && !isBlur && geom?.range > 0 ? 'cursor-grab active:cursor-grabbing' : ''
               }`}
             >
-              {/* Blur Background Layer (1-Stream Canvas Snapshot, Bebas Dual-Stream Bottleneck) */}
-              {isBlur && (
-                <canvas
-                  ref={canvasRef}
-                  width={240}
-                  height={426}
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 h-full w-full object-cover scale-110 blur-xl brightness-75"
-                />
-              )}
-
-              {/* Main Video Layer (Single Stream Source) */}
-              <video
-                ref={videoRef}
-                src={`/api/clips/${clip.id}/video`}
-                playsInline
-                preload="auto"
-                onLoadedMetadata={(e) => {
-                  setVideoSize({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })
-                  setReady(true)
-                  drawBlurFrame()
-                }}
-                onLoadedData={drawBlurFrame}
-                onTimeUpdate={handleTimeUpdate}
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
-                onSeeking={() => {
-                  isSeekingRef.current = true
-                }}
-                onSeeked={() => {
-                  isSeekingRef.current = false
-                  setIsBuffering(false)
-                  drawBlurFrame()
-                }}
-                onWaiting={() => setIsBuffering(true)}
-                onStalled={() => setIsBuffering(true)}
-                onPlaying={() => {
-                  isSeekingRef.current = false
-                  setIsBuffering(false)
-                  setPlaying(true)
-                }}
-                onCanPlay={() => setIsBuffering(false)}
-                onError={() => {
-                  setVideoError(true)
-                  setIsBuffering(false)
-                }}
-                style={
-                  geom && !isBlur && geom.range > 0
-                    ? {
-                        position: 'absolute',
-                        height: '100%',
-                        width: 'auto',
-                        maxWidth: 'none',
-                        left: `${-cropX * geom.range}px`,
-                        top: 0,
-                      }
-                    : {
-                        width: '100%',
-                        height: '100%',
-                        objectFit: isBlur ? 'contain' : 'cover',
-                      }
-                }
-                className={isBlur ? 'relative z-10' : 'relative'}
-              />
-
-              {/* Indikator Buffering Halus */}
-              {isBuffering && !videoError && (
-                <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-void/25 backdrop-blur-[1px]">
-                  <div className="flex items-center gap-2 rounded-lg border border-line bg-panel/90 px-3 py-1.5 shadow-lg">
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/40 border-t-accent" />
-                    <span className="font-mono text-xs text-ink">Memuat stream…</span>
-                  </div>
+              {/* Mode MP4 Render Player */}
+              {previewMode === 'mp4' && renderJob?.status === 'done' ? (
+                <div className="relative h-full w-full bg-void flex items-center justify-center">
+                  <video
+                    ref={mp4VideoRef}
+                    src={`/api/render-jobs/${renderJob.id}/download`}
+                    controls
+                    autoPlay
+                    playsInline
+                    className="h-full w-full object-contain"
+                  />
                 </div>
-              )}
-
-              {/* Hook Banner Live Preview */}
-              {hookBanner.enabled && hookBanner.text && (
-                <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
-                  <span
-                    style={{
-                      fontFamily: getFontFamily(hookFont, "'Anton', sans-serif"),
-                      fontWeight: 900,
-                      fontSize: clamp(Math.round((stageSize.w / 1080) * 54), 13, 26),
-                      color: '#FFFFFF',
-                      textTransform: 'uppercase',
-                      textAlign: 'center',
-                      lineHeight: 1.15,
-                      textShadow: '0 0 6px #000, 0 2px 8px rgba(0,0,0,0.95)',
-                    }}
-                  >
-                    {hookBanner.text}
-                  </span>
-                </div>
-              )}
-
-              {/* Viral Subtitle Live Preview */}
-              {activeSub && (
+              ) : (
+                /* Virtual Resolution Canvas (Skala 1:1 dengan FFmpeg PlayRes) */
                 <div
-                  className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4"
                   style={{
-                    top: subtitle.position === 'top'
-                      ? (hookBanner.enabled ? '22%' : '8%')
-                      : subtitle.position === 'middle'
-                        ? '50%'
-                        : 'auto',
-                    bottom: subtitle.position === 'bottom' ? '12%' : 'auto',
-                    transform: subtitle.position === 'middle' ? 'translateY(-50%)' : 'none',
+                    width: `${virtualDims.w}px`,
+                    height: `${virtualDims.h}px`,
+                    transform: `scale(${stageScale})`,
+                    transformOrigin: 'top left',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    overflow: 'hidden',
                   }}
+                  className="bg-void select-none"
                 >
-                  <div
-                    style={{
-                      fontFamily: getFontFamily(subtitleFont, "'Montserrat ExtraBold', sans-serif"),
-                      fontWeight: 800,
-                      fontSize: `${previewFontPx}px`,
-                      textAlign: 'center',
-                      lineHeight: 1.2,
-                      textTransform: 'uppercase',
-                      textShadow: '0 0 5px #000, 0 3px 6px rgba(0,0,0,0.95)',
+                  {/* Blur Background Layer (Single-Stream Snapshot scaled & blurred) */}
+                  {isBlur && (
+                    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                      <canvas
+                        ref={canvasRef}
+                        width={270}
+                        height={480}
+                        aria-hidden="true"
+                        style={{
+                          transform: 'scale(1.15)',
+                          filter: 'blur(36px) brightness(0.85)',
+                        }}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  )}
+
+                  {/* Main Video Layer */}
+                  <video
+                    ref={videoRef}
+                    src={`/api/clips/${clip.id}/video`}
+                    playsInline
+                    preload="auto"
+                    onLoadedMetadata={(e) => {
+                      setVideoSize({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })
+                      setReady(true)
+                      drawBlurFrame()
                     }}
-                  >
-                    {activeSub.text.split(/\s+/).map((word, wIdx) => {
-                      const clean = word.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
-                      const isKeyword = (subtitle.highlight_keywords || []).map((k) => k.toUpperCase()).includes(clean)
-                      return (
-                        <span
-                          key={wIdx}
-                          style={{
-                            color: isKeyword ? subtitle.highlight_color : subtitle.color,
-                            marginRight: '0.25em',
-                          }}
-                        >
-                          {word}
-                        </span>
-                      )
-                    })}
-                  </div>
+                    onLoadedData={drawBlurFrame}
+                    onTimeUpdate={handleTimeUpdate}
+                    onPlay={() => setPlaying(true)}
+                    onPause={() => setPlaying(false)}
+                    onSeeking={() => {
+                      isSeekingRef.current = true
+                    }}
+                    onSeeked={() => {
+                      isSeekingRef.current = false
+                      setIsBuffering(false)
+                      drawBlurFrame()
+                    }}
+                    onWaiting={() => setIsBuffering(true)}
+                    onStalled={() => setIsBuffering(true)}
+                    onPlaying={() => {
+                      isSeekingRef.current = false
+                      setIsBuffering(false)
+                      setPlaying(true)
+                    }}
+                    onCanPlay={() => setIsBuffering(false)}
+                    onError={() => {
+                      setVideoError(true)
+                      setIsBuffering(false)
+                    }}
+                    style={
+                      geom && !isBlur && geom.range > 0
+                        ? {
+                            position: 'absolute',
+                            height: '100%',
+                            width: `${geom.dispW}px`,
+                            maxWidth: 'none',
+                            left: `${-cropX * geom.range}px`,
+                            top: 0,
+                            objectFit: 'cover',
+                          }
+                        : {
+                            width: '100%',
+                            height: '100%',
+                            objectFit: isBlur ? 'contain' : 'cover',
+                          }
+                    }
+                    className={isBlur ? 'relative z-10' : 'relative'}
+                  />
+
+                  {/* Indikator Buffering Halus */}
+                  {isBuffering && !videoError && (
+                    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-void/30 backdrop-blur-[2px]">
+                      <div className="flex items-center gap-3 rounded-xl border border-line bg-panel/90 px-4 py-2 shadow-xl">
+                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-accent/40 border-t-accent" />
+                        <span className="font-mono text-sm text-ink">Memuat stream video…</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Hook Banner Live Preview (Identik Style: Banner di FFmpeg) */}
+                  {hookBanner.enabled && hookBanner.text && (
+                    <div
+                      className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-10"
+                      style={{
+                        top: `${bannerVirtualMarginV}px`,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: getFontFamily(hookFont, "'Anton', sans-serif"),
+                          fontWeight: 900,
+                          fontSize: `${bannerVirtualFontSize}px`,
+                          color: '#FFFFFF',
+                          textTransform: 'uppercase',
+                          textAlign: 'center',
+                          lineHeight: 1.15,
+                          textShadow:
+                            '0 0 8px #000, 3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 0 3px 0 #000, 0 -3px 0 #000, 3px 0 0 #000, -3px 0 0 #000',
+                          WebkitTextStroke: '2px #000000',
+                        }}
+                      >
+                        {hookBanner.text}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Viral Subtitle Live Preview (Identik Style: Default di FFmpeg) */}
+                  {activeViralSub && (
+                    <div
+                      className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-10"
+                      style={{
+                        top: subtitle.position === 'top'
+                          ? `${subtitleVirtualMarginV}px`
+                          : subtitle.position === 'middle'
+                            ? '50%'
+                            : 'auto',
+                        bottom: subtitle.position === 'bottom' ? `${subtitleVirtualMarginV}px` : 'auto',
+                        transform: subtitle.position === 'middle' ? 'translateY(-50%)' : 'none',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontFamily: getFontFamily(subtitleFont, "'Montserrat ExtraBold', sans-serif"),
+                          fontWeight: 800,
+                          fontSize: `${subtitleVirtualFontSize}px`,
+                          textAlign: 'center',
+                          lineHeight: 1.2,
+                          textTransform: 'uppercase',
+                          textShadow:
+                            '0 0 10px #000, 4px 4px 0 #000, -4px -4px 0 #000, 4px -4px 0 #000, -4px 4px 0 #000, 0 4px 0 #000, 0 -4px 0 #000, 4px 0 0 #000, -4px 0 0 #000',
+                          WebkitTextStroke: '2.5px #000000',
+                        }}
+                      >
+                        {activeViralSub.text.split(/\s+/).map((word, wIdx) => {
+                          const clean = word.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+                          const isKeyword = (subtitle.highlight_keywords || [])
+                            .map((k) => String(k).toUpperCase())
+                            .includes(clean)
+                          return (
+                            <span
+                              key={wIdx}
+                              style={{
+                                color: isKeyword ? subtitle.highlight_color : subtitle.color,
+                                marginRight: '0.3em',
+                              }}
+                            >
+                              {word}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -184,11 +184,15 @@ export function sanitizeDrawtext(input) {
     .trim();
 }
 
-/** Margin & alignment ASS (PlayRes 1080x1920) berdasarkan posisi subtitle. */
-export function subtitleLayout(position = 'bottom', hookBannerEnabled = false) {
+/** Margin & alignment ASS berdasarkan posisi subtitle dan tinggi frame (PlayResY). */
+export function subtitleLayout(position = 'bottom', hookBannerEnabled = false, playResY = 1920) {
   if (position === 'middle') return { alignment: 5, marginV: 0 };
-  if (position === 'top') return { alignment: 8, marginV: hookBannerEnabled ? 340 : 160 };
-  return { alignment: 2, marginV: 240 };
+  const scale = Number(playResY) > 0 ? Number(playResY) / 1920 : 1;
+  if (position === 'top') {
+    const rawMargin = hookBannerEnabled ? 340 : 160;
+    return { alignment: 8, marginV: Math.round(rawMargin * scale) };
+  }
+  return { alignment: 2, marginV: Math.round(240 * scale) };
 }
 
 /** Serialisasi subtitle ke ASS dasar dengan dukungan highlight kata viral & hook banner bersih. */
@@ -208,10 +212,12 @@ export function toAss(subtitles, {
   playResY = 1920,
 } = {}) {
   const cleanBanner = bannerText ? sanitizeAssText(bannerText).toUpperCase() : null;
-  const bannerMarginV = playResY < playResX ? Math.round((120 * playResY) / 1920) : 120;
+  const bannerScale = Number(playResY) > 0 ? Number(playResY) / 1920 : 1;
+  const bannerMarginV = Math.round(120 * bannerScale);
+  const bannerFontSize = Math.round(54 * (Number(playResX) > 0 ? Number(playResX) / 1080 : 1));
   const bFont = bannerFontName || 'Anton';
   const bannerStyle = cleanBanner
-    ? `Style: Banner,${bFont},54,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,8,40,40,${bannerMarginV},1\n`
+    ? `Style: Banner,${bFont},${bannerFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,8,40,40,${bannerMarginV},1\n`
     : '';
 
   const header = `[Script Info]

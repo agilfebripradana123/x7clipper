@@ -399,6 +399,27 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, JS 290.81 kB).
 - **Status:** Selesai.
 
+---
+
+## [2026-11-23] Live Preview 100% WYSIWYG & Virtual Resolution Canvas (Fase 8)
+- **Tujuan:** Menyelaraskan seluruh preview di browser dengan output render FFmpeg 1:1, menghilangkan perbedaan ukuran font, posisi banner, outline, dan aspect ratio container.
+- **File diubah:**
+  - `backend/app/Http/Controllers/Api/ProjectController.php`:
+    - Eager loading `latest_render_job` pada `show()` agar editor langsung mengetahui riwayat render klip tanpa klik ulang.
+  - `worker/src/subtitleShift.js`:
+    - `subtitleLayout`: menerima parameter `playResY` agar MarginV atas/bawah/tengah diskalakan proporsional terhadap resolusi frame (`1080x1920`, `1080x1080`, `1440x1080`, `1920x1080`).
+    - `toAss`: menghitung `bannerMarginV` dan `bannerFontSize` secara proporsional sesuai rasio frame.
+  - `frontend/src/components/Editor.jsx`:
+    - Virtual Resolution Canvas: kontainer preview dirender pada resolusi target asli FFmpeg (`1080x1920`, `1080x1080`, `1440x1080`, `1920x1080`) dan diskalakan menggunakan `transform: scale(stageScale)`.
+    - Parity Video Framing: mode `full_crop` dengan drag-to-pan dinormalisasi terhadap skala layar, mode `blur_bg` dengan single stream `<canvas>` (scale 1.15, blur 36px, brightness 0.85).
+    - Parity Hook Banner & Subtitle: pemecah `splitViralSubtitlesPreview` 2-3 kata per baris, outline tebal multi-layer, highlight kata `#FFE600`, dan MarginV identik dengan `.ass`.
+    - Toggle Preview: tombol "Live Preview Editan" vs "Hasil Render MP4" saat klip telah selesai dirender.
+- **Hasil uji:**
+  - `php artisan test` — **PASS 44/44 (204 assertions)**.
+  - `npm test` (worker) — **PASS 87/87**.
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 293.84 kB).
+- **Status:** Selesai.
+
 
 
 
