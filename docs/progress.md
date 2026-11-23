@@ -377,6 +377,28 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, JS 290.61 kB).
 - **Status:** Selesai (Fase 8 tuntas).
 
+---
+
+## [2026-11-23] Perbaikan Validasi 422 & Normalisasi Subtitle (Backend & Frontend)
+- **Tujuan:** Menghilangkan error validasi 422 saat user mengosongkan teks baris subtitle atau saat cue awal video memiliki timestamp 0.0s (`end <= start`), serta memastikan pesan error spesifik per baris.
+- **File diubah:**
+  - `backend/app/Http/Controllers/Api/ClipController.php`:
+    - Normalisasi awal `subtitles`: buang baris kosong (`trim($cue['text']) === ''`), cast `start` dan `end` ke float (`>= 0`), jika `start == 0 && end == 0` sesuaikan `end = 0.05s`, serta pertahankan `id` nullable.
+    - Rule validasi `subtitles`: `'subtitles' => ['sometimes', 'array', 'max:2000']`, `'subtitles.*.id' => ['sometimes', 'nullable']`, `'subtitles.*.start' => ['required', 'numeric', 'min:0']`, `'subtitles.*.end' => ['required', 'numeric', 'gte:subtitles.*.start']`, `'subtitles.*.text' => ['nullable', 'string', 'max:500']`.
+    - Pesan error spesifik per baris (`"Periksa baris subtitle #X: ..."`).
+  - `backend/tests/Feature/Api/ClipConfigApiTest.php`:
+    - Menambahkan feature test `test_subtitles_with_empty_text_is_cleaned_and_returns_200()` dan `test_subtitles_with_zero_start_and_zero_end_adjusted_and_returns_200()`.
+    - Memperbarui test `test_rejects_reversed_subtitle_range()` dengan assertion pesan error baris spesifik.
+  - `frontend/src/components/Editor.jsx`:
+    - `validateRows`: mengabaikan teks kosong saat user mengedit sehingga tidak memicu error 422 di state lokal, validasi `e < s` (mengizinkan `e >= s`).
+    - `handleSave`: normalisasi payload `{ id, start, end, text }` dengan clamping, penyesuaian otomatis `end` jika `<= start`, dan filter baris kosong sebelum dikirim ke server.
+    - `handleRender`: auto-flush `handleSave()` jika state belum `saved` sebelum memicu render.
+- **Hasil uji:**
+  - `php artisan test` — **PASS 44/44 (204 assertions)**.
+  - `npm test` (worker) — **PASS 87/87**.
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 290.81 kB).
+- **Status:** Selesai.
+
 
 
 

@@ -54,7 +54,54 @@ class ClipController extends Controller
 
     public function updateConfig(Request $request, Clip $clip): JsonResponse
     {
-        $validated = $request->validate([
+        if ($request->has('subtitles') && is_array($request->input('subtitles'))) {
+            $rawSubs = $request->input('subtitles');
+            $normalizedSubs = [];
+
+            foreach ($rawSubs as $cue) {
+                if (! is_array($cue)) {
+                    continue;
+                }
+
+                $text = isset($cue['text']) ? trim((string) $cue['text']) : '';
+                if ($text === '') {
+                    continue;
+                }
+
+                $start = isset($cue['start']) && is_numeric($cue['start'])
+                    ? max(0.0, (float) $cue['start'])
+                    : (isset($cue['start']) ? $cue['start'] : 0.0);
+                $end = isset($cue['end']) && is_numeric($cue['end'])
+                    ? max(0.0, (float) $cue['end'])
+                    : (isset($cue['end']) ? $cue['end'] : 0.0);
+
+                if (is_numeric($start) && is_numeric($end) && (float) $start >= 0 && (float) $end >= 0) {
+                    if ((float) $end <= (float) $start) {
+                        if ((float) $start == 0.0 && (float) $end == 0.0) {
+                            $end = round((float) $start + 0.05, 3);
+                        }
+                    }
+                    $start = round((float) $start, 3);
+                    $end = is_numeric($end) ? round((float) $end, 3) : $end;
+                }
+
+                $item = [
+                    'start' => $start,
+                    'end' => $end,
+                    'text' => $text,
+                ];
+
+                if (array_key_exists('id', $cue) && $cue['id'] !== null) {
+                    $item['id'] = $cue['id'];
+                }
+
+                $normalizedSubs[] = $item;
+            }
+
+            $request->merge(['subtitles' => $normalizedSubs]);
+        }
+
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'edit_config' => ['sometimes', 'array'],
             'edit_config.trim_start' => ['sometimes', 'numeric', 'min:0'],
             'edit_config.trim_end' => ['sometimes', 'numeric', 'min:0'],
@@ -86,10 +133,41 @@ class ClipController extends Controller
             'edit_config.subtitle.offset_sec' => ['sometimes', 'numeric', 'between:-2,2'],
             'suggested_caption' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'subtitles' => ['sometimes', 'array', 'max:2000'],
+            'subtitles.*.id' => ['sometimes', 'nullable'],
             'subtitles.*.start' => ['required', 'numeric', 'min:0'],
-            'subtitles.*.end' => ['required', 'numeric', 'min:0'],
-            'subtitles.*.text' => ['required', 'string', 'max:500'],
+            'subtitles.*.end' => ['required', 'numeric', 'gte:subtitles.*.start'],
+            'subtitles.*.text' => ['nullable', 'string', 'max:500'],
+        ], [
+            'subtitles.*.start.required' => 'Waktu awal subtitle baris #:position wajib diisi.',
+            'subtitles.*.start.numeric' => 'Waktu awal subtitle baris #:position harus berupa angka.',
+            'subtitles.*.start.min' => 'Waktu awal subtitle baris #:position tidak boleh bernilai negatif.',
+            'subtitles.*.end.required' => 'Waktu akhir subtitle baris #:position wajib diisi.',
+            'subtitles.*.end.numeric' => 'Waktu akhir subtitle baris #:position harus berupa angka.',
+            'subtitles.*.end.gte' => 'Periksa baris subtitle #:position: waktu akhir harus lebih besar atau sama dengan waktu awal.',
+            'subtitles.*.text.max' => 'Periksa baris subtitle #:position: teks melebihi batas 500 karakter.',
         ]);
+
+        if ($validator->fails()) {
+            $formattedErrors = [];
+            foreach ($validator->errors()->messages() as $field => $messages) {
+                if (preg_match('/^subtitles\.(\d+)\.(.+)$/', $field, $matches)) {
+                    $rowNum = ((int) $matches[1]) + 1;
+                    $col = $matches[2];
+                    $formattedErrors[$field] = array_map(function ($msg) use ($rowNum, $col) {
+                        if (str_contains($msg, "baris #{$rowNum}") || str_contains($msg, "baris subtitle #{$rowNum}")) {
+                            return $msg;
+                        }
+                        return "Periksa baris subtitle #{$rowNum} ({$col}): {$msg}";
+                    }, $messages);
+                } else {
+                    $formattedErrors[$field] = $messages;
+                }
+            }
+
+            throw ValidationException::withMessages($formattedErrors);
+        }
+
+        $validated = $validator->validated();
 
         $config = array_merge($clip->edit_config_json ?? [], $request->input('edit_config', []));
         $duration = round((float) $clip->end_sec - (float) $clip->start_sec, 3);
@@ -113,12 +191,6 @@ class ClipController extends Controller
                 } elseif ($cStart > $duration + 0.5 || $cEnd > $duration + 0.5) {
                     $errors["edit_config.cuts.{$index}.end"] = "Potongan melebihi durasi klip ({$duration} detik).";
                 }
-            }
-        }
-
-        foreach ($validated['subtitles'] ?? [] as $index => $line) {
-            if ((float) $line['end'] <= (float) $line['start']) {
-                $errors["subtitles.{$index}.end"] = 'end harus lebih besar dari start.';
             }
         }
 

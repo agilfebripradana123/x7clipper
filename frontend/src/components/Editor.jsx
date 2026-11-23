@@ -40,12 +40,15 @@ const HEX = /^#[0-9a-fA-F]{6}$/
 function validateRows(rows, duration) {
   const errors = {}
   for (const r of rows) {
+    const text = String(r.text ?? '').trim()
+    // Baris dengan teks kosong tidak dianggap error fatal (akan difilter saat save)
+    if (!text) continue
+
     const s = Number(r.start)
     const e = Number(r.end)
     if (!Number.isFinite(s) || s < 0) errors[r.id] = 'Waktu awal tidak valid.'
-    else if (!Number.isFinite(e) || e <= s) errors[r.id] = 'Waktu akhir harus setelah awal.'
+    else if (!Number.isFinite(e) || e < s) errors[r.id] = 'Waktu akhir harus lebih besar atau sama dengan awal.'
     else if (e > duration + 1.0) errors[r.id] = 'Waktu akhir melebihi durasi klip.'
-    else if (!String(r.text).trim()) errors[r.id] = 'Teks subtitle kosong.'
   }
   return errors
 }
@@ -612,12 +615,25 @@ export default function Editor({ clip, onBack }) {
     }
 
     const sortedSubs = rows
-      .map((r) => ({
-        start: clamp(round3(Number(r.start)), 0, duration),
-        end: clamp(round3(Number(r.end)), 0, duration + 0.5),
-        text: String(r.text).trim(),
-      }))
-      .filter((r) => r.end > r.start && r.text.length > 0)
+      .map((cue, idx) => {
+        const text = String(cue.text ?? '').trim()
+        const rawStart = Number(cue.start)
+        const rawEnd = Number(cue.end)
+        const s = clamp(round3(Number.isFinite(rawStart) ? Math.max(0, rawStart) : 0), 0, duration)
+        let e = clamp(round3(Number.isFinite(rawEnd) ? Math.max(0, rawEnd) : 0), 0, duration + 0.5)
+
+        if (e <= s) {
+          e = round3(s + 0.05)
+        }
+
+        return {
+          id: String(cue.id ?? idx + 1),
+          start: s,
+          end: e,
+          text,
+        }
+      })
+      .filter((r) => r.text.length > 0 && r.end >= r.start)
       .sort((a, b) => a.start - b.start)
 
     const sortedCuts = cuts
@@ -688,6 +704,9 @@ export default function Editor({ clip, onBack }) {
     setRenderBusy(true)
     setRenderError(null)
     try {
+      if (saveState !== 'saved') {
+        await handleSave()
+      }
       const res = await renderClip(clip.id)
       setRenderJob(res?.data)
     } catch (err) {

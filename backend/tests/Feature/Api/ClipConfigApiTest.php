@@ -126,10 +126,56 @@ class ClipConfigApiTest extends TestCase
     {
         $clip = $this->makeClip();
 
-        $this->patchJson("/api/clips/{$clip->id}/config", [
+        $res = $this->patchJson("/api/clips/{$clip->id}/config", [
             'subtitles' => [['start' => 5, 'end' => 3, 'text' => 'salah']],
-        ])->assertStatus(422)
+        ]);
+        $res->assertStatus(422)
             ->assertJsonValidationErrors(['subtitles.0.end']);
+
+        $errorMsg = $res->json('errors')['subtitles.0.end'][0] ?? '';
+        $this->assertStringContainsString('baris subtitle #1', $errorMsg);
+    }
+
+    public function test_subtitles_with_empty_text_is_cleaned_and_returns_200(): void
+    {
+        $clip = $this->makeClip();
+
+        $response = $this->patchJson("/api/clips/{$clip->id}/config", [
+            'subtitles' => [
+                ['start' => 1.0, 'end' => 3.0, 'text' => 'baris satu'],
+                ['start' => 3.0, 'end' => 5.0, 'text' => '   '],
+                ['start' => 5.0, 'end' => 7.0, 'text' => 'baris tiga'],
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonCount(2, 'data.subtitle_json')
+            ->assertJsonPath('data.subtitle_json.0.text', 'baris satu')
+            ->assertJsonPath('data.subtitle_json.1.text', 'baris tiga');
+
+        $clip->refresh();
+        $this->assertCount(2, $clip->subtitle_json);
+    }
+
+    public function test_subtitles_with_zero_start_and_zero_end_adjusted_and_returns_200(): void
+    {
+        $clip = $this->makeClip();
+
+        $response = $this->patchJson("/api/clips/{$clip->id}/config", [
+            'subtitles' => [
+                ['start' => 0, 'end' => 0, 'text' => 'cue awal video'],
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.subtitle_json')
+            ->assertJsonPath('data.subtitle_json.0.start', 0)
+            ->assertJsonPath('data.subtitle_json.0.end', 0.05)
+            ->assertJsonPath('data.subtitle_json.0.text', 'cue awal video');
+
+        $clip->refresh();
+        $this->assertSame(0.0, (float) $clip->subtitle_json[0]['start']);
+        $this->assertSame(0.05, (float) $clip->subtitle_json[0]['end']);
     }
 
     public function test_project_show_exposes_editor_state(): void

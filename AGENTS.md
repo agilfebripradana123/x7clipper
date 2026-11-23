@@ -204,18 +204,19 @@ web-clipper/
 - `2026-11-21`: Multi-Aspect Ratio (`9:16`, `1:1`, `4:3`, `16:9`) didukung penuh di backend (`ClipController`), renderer FFmpeg (`outputDimensions` & dynamic crop/scale), dan preview canvas frontend. Mode `blur_bg` menerapkan background video blur di preview dan FFmpeg `split=2`, `gblur=sigma=35,eq=brightness=-0.12`, `overlay` di renderer. `subtitle_font_size` (32..96, default 64) diskala proporsional di preview dan output `.ass`, serta cue subtitle baris demi baris dapat diedit langsung.
 - `2026-11-21`: Font viral (6 font open-source TTF) di-bundle di `storage/fonts/` dan `frontend/public/fonts/`, nama keluarga internal dibaca langsung dari tabel OpenType `name`, pemilih font terpisah untuk `hook_font` dan `subtitle_font`, generator caption AI Gen Z + 3 hashtag via `POST /api/clips/{id}/caption`, dan 1-click clipboard copy di UI Web Editor.
 - `2026-11-21`: Eliminasi bottleneck dual-stream `<video>` pada `blur_bg` dengan memakai 1 `<video>` utama + `<canvas>` snapshot blur, `isSeekingRef` guard pada auto-skip, `AbortController` + debounce 800ms + `withoutMiddleware('throttle')` untuk auto-save `PATCH /api/clips/{id}/config`, serta fallback konfigurasi 9router ke `base_path('../.env')` dan status `502` eksplisit saat `POST /api/clips/{id}/caption` gagal.
+- `2026-11-23`: Perbaikan validasi `422` pada `PATCH /api/clips/{id}/config`: sanitasi awal baris subtitle kosong di backend & frontend, penyesuaian otomatis cue awal video `0.0s` (`end = start + 0.05`), validasi `gte:subtitles.*.start`, formatting pesan error detail spesifik per baris, dan auto-flush save sebelum render export.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 8 (Stabilitas Editor, Auto-Save & Regenerate Caption 9router) — Selesai Penuh
+- **Fase Aktif:** Fase 8 (Stabilitas Editor, Auto-Save, Regenerate Caption & Subtitle Validation) — Selesai Penuh
 - **Tugas Terakhir Selesai:**
-  - `services.ninerouter` di Laravel otomatis fallback membaca root `.env` (`base_path('../.env')`); `ClipController@generateCaption` memanggil `/chat/completions` dengan `temperature: 0.85` tanpa fallback template hardcoded, dan mengembalikan `502` jelas jika 9router gagal.
-  - Auto-save `Editor.jsx` memakai `AbortController` + debounce `800ms`, clamping ketat, indikator error detail + tombol `Coba Lagi`, serta `withoutMiddleware('throttle')` di `routes/api.php`.
-  - Video preview `blur_bg` hanya menggunakan 1 elemen `<video>` + `<canvas>` background blur, `isSeekingRef` guard untuk auto-skip, dan pembersihan output buffer di `GET /api/clips/{id}/video`.
-  - Verifikasi: PHPUnit 42/42 PASS, worker node test 87/87 PASS, frontend build PASS.
+  - Normalisasi awal `subtitles` di `ClipController@updateConfig`: filter teks kosong, cast float, sesuaikan timestamp `0.0s..0.0s` -> `0.0s..0.05s`, dan kustomisasi pesan error spesifik baris subtitle (`Periksa baris subtitle #X: ...`).
+  - Feature test `ClipConfigApiTest`: test baris teks kosong dibersihkan (200 OK) dan timestamp 0..0 disesuaikan (200 OK).
+  - Normalisasi payload `subtitles` di `frontend/src/components/Editor.jsx`: `validateRows` abaikan teks kosong saat input, payload sanitize `{ id, start, end, text }` sebelum dikirim, dan auto-flush save sebelum panggil render.
+  - Verifikasi: PHPUnit 44/44 PASS (204 assertions), worker node test 87/87 PASS, frontend build PASS.
 - **Tugas Berikutnya:** Semua perbaikan tuntas dan siap digunakan.
-- **File Terakhir Diubah:** `backend/config/services.php`, `backend/.env.example`, `backend/app/Http/Controllers/Api/ClipController.php`, `backend/routes/api.php`, `backend/tests/Feature/Api/ClipCaptionApiTest.php`, `frontend/src/{components/Editor.jsx,api.js}`, `AGENTS.md`, `docs/progress.md`.
-- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 42/42 (191 assertions), `npm test` (worker) PASS 87/87, `npm run build` PASS.
+- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/ClipController.php`, `backend/tests/Feature/Api/ClipConfigApiTest.php`, `frontend/src/components/Editor.jsx`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 44/44, `npm test` (worker) PASS 87/87, `npm run build` PASS.
