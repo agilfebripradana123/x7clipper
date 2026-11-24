@@ -289,12 +289,49 @@ export default function Editor({ clip, onBack }) {
   const [pollNonce, setPollNonce] = useState(0)
   const [stageSize, setStageSize] = useState({ w: 0, h: 0 })
   const [videoSize, setVideoSize] = useState({ w: 0, h: 0 })
+  const [agentNotesOpen, setAgentNotesOpen] = useState(false)
 
-  // Scale factor kanvas virtual ke kontainer preview
+  // Target aspect ratio float: 9/16, 1/1, 4/3, 16/9
+  const targetRatio = useMemo(() => {
+    switch (aspectRatio) {
+      case '1:1':
+        return 1
+      case '4:3':
+        return 4 / 3
+      case '16:9':
+        return 16 / 9
+      case '9:16':
+      default:
+        return 9 / 16
+    }
+  }, [aspectRatio])
+
+  // Dimensi piksel bingkai preview presisi terhadap luas stage
+  const { boxW, boxH } = useMemo(() => {
+    const sw = stageSize.w
+    const sh = stageSize.h
+    if (!sw || !sh) {
+      return { boxW: 300, boxH: Math.round(300 / targetRatio) }
+    }
+    const availW = Math.max(160, sw - 32)
+    const availH = Math.max(160, sh - 32)
+
+    if (availW / availH > targetRatio) {
+      const h = availH
+      const w = Math.round(h * targetRatio)
+      return { boxW: w, boxH: h }
+    } else {
+      const w = availW
+      const h = Math.round(w / targetRatio)
+      return { boxW: w, boxH: h }
+    }
+  }, [stageSize.w, stageSize.h, targetRatio])
+
+  // Scale factor kanvas virtual ke kotak preview
   const stageScale = useMemo(() => {
-    if (!stageSize.w || !virtualDims.w) return 1
-    return stageSize.w / virtualDims.w
-  }, [stageSize.w, virtualDims.w])
+    if (!boxW || !virtualDims.w) return 1
+    return boxW / virtualDims.w
+  }, [boxW, virtualDims.w])
 
   const [autoEditing, setAutoEditing] = useState(false)
   const [currentClip, setCurrentClip] = useState(clip)
@@ -326,6 +363,12 @@ export default function Editor({ clip, onBack }) {
       }
     }
   }
+
+  // Gambar blur background saat komponen siap atau saat pause / seek / loaded
+  useEffect(() => {
+    if (!isBlur) return
+    drawBlurFrame()
+  }, [isBlur, videoSize, currentTime])
 
   useEffect(() => {
     if (!isBlur || !playing) return
@@ -872,72 +915,42 @@ export default function Editor({ clip, onBack }) {
     return ticks
   }, [duration])
 
-  // Aspect ratio container styling untuk Canvas Preview
-  const stageAspectStyle = useMemo(() => {
-    switch (aspectRatio) {
-      case '1:1':
-        return { aspectRatio: '1 / 1', maxHeight: '520px' }
-      case '4:3':
-        return { aspectRatio: '4 / 3', maxHeight: '500px' }
-      case '16:9':
-        return { aspectRatio: '16 / 9', maxHeight: '460px' }
-      case '9:16':
-      default:
-        return { aspectRatio: '9 / 16', maxHeight: '560px' }
-    }
-  }, [aspectRatio])
-
   return (
-    <div className="flex flex-col gap-4">
-      {/* Studio Topbar */}
-      <div className="flex items-center justify-between rounded-xl border border-line bg-panel/80 px-4 py-3 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={onBack} className={BTN_GHOST}>
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-void text-ink select-none">
+      {/* 1. Top Header Bar (h-14) */}
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950/95 px-4 z-40">
+        {/* Kiri: Tombol Kembali, Judul Klip & Badge Rasio */}
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-medium text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 transition"
+          >
             ← Kembali
           </button>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-ink" title={clip.title}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <h2 className="truncate text-xs sm:text-sm font-semibold text-zinc-100 max-w-[200px] sm:max-w-xs md:max-w-md" title={clip.title}>
               {clip.title}
             </h2>
-            <div className="flex items-center gap-2 font-mono text-[10px] text-faint">
-              <span>Durasi Asli: {formatTime(duration)}</span>
-              <span>·</span>
-              <span className="text-accent font-bold">
-                Output: {formatTime(totalOutputDuration)}
-              </span>
-            </div>
+            <span className="shrink-0 rounded-md border border-zinc-700/80 bg-zinc-800/80 px-2 py-0.5 font-mono text-[10px] font-semibold text-accent">
+              {aspectRatio} • {virtualDims.w}×{virtualDims.h}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleRunAutoEditor}
-            disabled={autoEditing}
-            className={`${BTN_GHOST} text-accent border-accent/40 hover:bg-accent/10 px-3`}
-            title="Jalankan ulang Auto-Editor Agent untuk mencari framing & pacing baru"
-          >
-            {autoEditing ? (
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
-                <span>Menganalisis…</span>
-              </span>
-            ) : (
-              '✨ Auto-Edit AI'
-            )}
-          </button>
-
+        {/* Kanan: Pill Auto-Save, Auto-Edit AI & Export MP4 */}
+        <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex items-center gap-1.5 font-mono text-[11px]">
             <span
               title={saveError || ''}
-              className={`max-w-[200px] truncate ${
+              className={`max-w-[140px] truncate ${
                 saveState === 'saved'
                   ? 'text-ok'
                   : saveState === 'saving'
                     ? 'text-accent'
                     : saveState === 'error'
                       ? 'text-fail'
-                      : 'text-faint'
+                      : 'text-zinc-500'
               }`}
             >
               {saveState === 'saved'
@@ -945,7 +958,7 @@ export default function Editor({ clip, onBack }) {
                 : saveState === 'saving'
                   ? '● Menyimpan…'
                   : saveState === 'error'
-                    ? `● Gagal (${saveError || 'Error'})`
+                    ? `● Gagal`
                     : '● Belum simpan'}
             </span>
             {saveState === 'error' && (
@@ -961,30 +974,57 @@ export default function Editor({ clip, onBack }) {
 
           <button
             type="button"
-            onClick={() => setActiveTab('export')}
-            className={`${BTN_PRIMARY} px-4`}
+            onClick={handleRunAutoEditor}
+            disabled={autoEditing}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 text-xs font-medium text-accent hover:bg-accent/20 transition disabled:opacity-50"
+            title="Jalankan ulang Auto-Editor Agent untuk mencari framing & pacing baru"
           >
-            Export Video
+            {autoEditing ? (
+              <>
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+                <span className="hidden sm:inline">Menganalisis…</span>
+              </>
+            ) : (
+              <>
+                <span>✨</span>
+                <span className="hidden sm:inline">Auto-Edit AI</span>
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('export')}
+            className="inline-flex h-8 items-center justify-center rounded-lg bg-accent px-3.5 text-xs font-bold text-void hover:bg-accent-2 shadow-sm transition"
+          >
+            Export MP4
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Studio Workspace: 2 Kolom (Kiri: Canvas + Timeline CapCut Style, Kanan: Tab Panel) */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* Kolom Kiri: Canvas + Timeline (lg:col-span-8) */}
-        <div className="flex flex-col gap-3 lg:col-span-8">
-          {/* Canvas Preview Stage (Dinamis sesuai Aspect Ratio & Virtual 1080p Canvas) */}
-          <div className="flex flex-col gap-2 w-full items-center justify-center bg-void/60 rounded-2xl border border-line/50 p-2">
+      {/* 2. Area Utama (2 Kolom: Kiri Studio & Timeline, Kanan Tab Settings) */}
+      <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden">
+        {/* Kolom Kiri: Studio Stage + Timeline Multi-Cut */}
+        <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+          {/* A. Studio Stage: Background Grid Halus & Bingkai Preview Presisi */}
+          <div
+            ref={stageRef}
+            className="flex-1 flex flex-col items-center justify-center bg-[#09090b] relative overflow-hidden p-4 select-none"
+            style={{
+              backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px)',
+              backgroundSize: '20px 20px',
+            }}
+          >
             {/* Toggle Preview Editan vs Hasil Render MP4 */}
             {renderJob?.status === 'done' && (
-              <div className="flex items-center gap-1.5 self-center rounded-lg border border-line bg-panel/90 p-1 text-xs">
+              <div className="absolute top-3 z-30 flex items-center gap-1 rounded-lg border border-zinc-700/80 bg-zinc-900/95 p-1 text-xs shadow-lg backdrop-blur-md">
                 <button
                   type="button"
                   onClick={() => setPreviewMode('live')}
                   className={`rounded px-2.5 py-1 font-medium transition ${
                     previewMode === 'live'
                       ? 'bg-accent text-void font-bold shadow-sm'
-                      : 'text-muted hover:text-ink'
+                      : 'text-zinc-400 hover:text-zinc-100'
                   }`}
                 >
                   Live Preview Editan
@@ -995,7 +1035,7 @@ export default function Editor({ clip, onBack }) {
                   className={`rounded px-2.5 py-1 font-medium transition ${
                     previewMode === 'mp4'
                       ? 'bg-accent text-void font-bold shadow-sm'
-                      : 'text-muted hover:text-ink'
+                      : 'text-zinc-400 hover:text-zinc-100'
                   }`}
                 >
                   Hasil Render MP4
@@ -1003,20 +1043,23 @@ export default function Editor({ clip, onBack }) {
               </div>
             )}
 
+            {/* Kotak Bingkai Preview Presisi */}
             <div
-              ref={stageRef}
-              style={stageAspectStyle}
+              style={{
+                width: `${boxW}px`,
+                height: `${boxH}px`,
+              }}
               onPointerDown={handlePointerDownCanvas}
               onPointerMove={handlePointerMoveCanvas}
               onPointerUp={handlePointerUpCanvas}
               onPointerCancel={handlePointerUpCanvas}
-              className={`relative mx-auto flex w-full items-center justify-center overflow-hidden rounded-xl border border-line bg-void shadow-2xl transition-[aspect-ratio] duration-300 ${
+              className={`relative overflow-hidden rounded-xl border border-zinc-700/80 bg-black shadow-2xl transition-[width,height] duration-200 ${
                 previewMode === 'live' && !isBlur && geom?.range > 0 ? 'cursor-grab active:cursor-grabbing' : ''
               }`}
             >
               {/* Mode MP4 Render Player */}
               {previewMode === 'mp4' && renderJob?.status === 'done' ? (
-                <div className="relative h-full w-full bg-void flex items-center justify-center">
+                <div className="relative h-full w-full bg-black flex items-center justify-center">
                   <video
                     ref={mp4VideoRef}
                     src={`/api/render-jobs/${renderJob.id}/download`}
@@ -1039,7 +1082,7 @@ export default function Editor({ clip, onBack }) {
                     left: 0,
                     overflow: 'hidden',
                   }}
-                  className="bg-void select-none"
+                  className="bg-black select-none"
                 >
                   {/* Blur Background Layer (Single-Stream Snapshot scaled & blurred) */}
                   {isBlur && (
@@ -1050,8 +1093,8 @@ export default function Editor({ clip, onBack }) {
                         height={480}
                         aria-hidden="true"
                         style={{
-                          transform: 'scale(1.15)',
-                          filter: 'blur(36px) brightness(0.85)',
+                          transform: 'scale(1.18)',
+                          filter: 'blur(32px) brightness(0.75)',
                         }}
                         className="h-full w-full object-cover"
                       />
@@ -1070,9 +1113,13 @@ export default function Editor({ clip, onBack }) {
                       drawBlurFrame()
                     }}
                     onLoadedData={drawBlurFrame}
+                    onCanPlay={drawBlurFrame}
                     onTimeUpdate={handleTimeUpdate}
                     onPlay={() => setPlaying(true)}
-                    onPause={() => setPlaying(false)}
+                    onPause={() => {
+                      setPlaying(false)
+                      drawBlurFrame()
+                    }}
                     onSeeking={() => {
                       isSeekingRef.current = true
                     }}
@@ -1088,7 +1135,6 @@ export default function Editor({ clip, onBack }) {
                       setIsBuffering(false)
                       setPlaying(true)
                     }}
-                    onCanPlay={() => setIsBuffering(false)}
                     onError={() => {
                       setVideoError(true)
                       setIsBuffering(false)
@@ -1115,10 +1161,10 @@ export default function Editor({ clip, onBack }) {
 
                   {/* Indikator Buffering Halus */}
                   {isBuffering && !videoError && (
-                    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-void/30 backdrop-blur-[2px]">
-                      <div className="flex items-center gap-3 rounded-xl border border-line bg-panel/90 px-4 py-2 shadow-xl">
+                    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                      <div className="flex items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-900/90 px-4 py-2 shadow-xl">
                         <span className="h-5 w-5 animate-spin rounded-full border-2 border-accent/40 border-t-accent" />
-                        <span className="font-mono text-sm text-ink">Memuat stream video…</span>
+                        <span className="font-mono text-sm text-zinc-100">Memuat stream video…</span>
                       </div>
                     </div>
                   )}
@@ -1202,10 +1248,10 @@ export default function Editor({ clip, onBack }) {
             </div>
           </div>
 
-          {/* Timeline CapCut-Style Container */}
-          <div className="rounded-xl border border-line bg-panel/75 p-3.5 shadow-md flex flex-col gap-2.5">
+          {/* B. Timeline Multi-Cut Bawah (Tinggi h-44, Toolbar Ringkas & Ruler) */}
+          <div className="h-44 shrink-0 border-t border-zinc-800 bg-zinc-950 p-3 flex flex-col justify-between">
             {/* 1. Toolbar Ringkas Atas Timeline */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/60 pb-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
@@ -1244,14 +1290,14 @@ export default function Editor({ clip, onBack }) {
 
               {/* Time Indicators */}
               <div className="flex items-center gap-2 font-mono text-xs">
-                <span className="text-ink font-semibold">{formatTime(currentTime)}</span>
-                <span className="text-faint">/</span>
-                <span className="text-faint">{formatTime(duration)}</span>
+                <span className="text-zinc-100 font-semibold">{formatTime(currentTime)}</span>
+                <span className="text-zinc-600">/</span>
+                <span className="text-zinc-500">{formatTime(duration)}</span>
                 <span
                   className="ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold bg-accent/15 text-accent border border-accent/40"
                   title="Total durasi yang akan diekspor"
                 >
-                  Durasi: {formatTime(totalOutputDuration)}
+                  Durasi Final: {formatTime(totalOutputDuration)}
                 </span>
               </div>
             </div>
@@ -1260,11 +1306,10 @@ export default function Editor({ clip, onBack }) {
             <div
               ref={timelineTrackRef}
               onPointerDown={handleTimelinePointerDown}
-              className="relative select-none cursor-pointer rounded-lg border border-line/80 bg-void/90 py-2 px-1 flex flex-col gap-1.5 overflow-hidden"
-              style={{ minHeight: '120px' }}
+              className="relative select-none cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900/90 py-1 px-1 flex flex-col gap-1 overflow-hidden h-28"
             >
               {/* Ruler Bar */}
-              <div className="relative h-4 w-full border-b border-line/40 text-[9px] font-mono text-faint">
+              <div className="relative h-4 w-full border-b border-zinc-800 text-[9px] font-mono text-zinc-500">
                 {rulerTicks.map((t) => (
                   <div
                     key={t}
@@ -1272,13 +1317,13 @@ export default function Editor({ clip, onBack }) {
                     className="absolute top-0 -translate-x-1/2 flex flex-col items-center pointer-events-none"
                   >
                     <span>{t}s</span>
-                    <span className="h-1 w-px bg-line/80 mt-0.5" />
+                    <span className="h-1 w-px bg-zinc-700 mt-0.5" />
                   </div>
                 ))}
               </div>
 
               {/* Video Track with Drag-to-Trim & Segment Selection */}
-              <div className="relative h-14 w-full bg-panel-2/40 rounded flex items-center">
+              <div className="relative h-14 w-full bg-zinc-950/60 rounded flex items-center">
                 {cuts.map((c) => {
                   const leftPct = (c.start / duration) * 100
                   const widthPct = ((c.end - c.start) / duration) * 100
@@ -1317,7 +1362,7 @@ export default function Editor({ clip, onBack }) {
                       )}
 
                       {/* Label Durasi & Status */}
-                      <div className="flex-1 min-w-0 px-1.5 text-center font-mono text-[10px] font-bold truncate">
+                      <div className="flex-1 min-w-0 px-1 text-center font-mono text-[10px] font-bold truncate">
                         <span className={isCutActive ? 'text-accent' : 'text-fail line-through'}>
                           {formatTime(c.end - c.start)}
                         </span>
@@ -1342,7 +1387,7 @@ export default function Editor({ clip, onBack }) {
               </div>
 
               {/* Subtitle Mini Track */}
-              <div className="relative h-4 w-full bg-panel/30 rounded overflow-hidden">
+              <div className="relative h-3 w-full bg-zinc-950/40 rounded overflow-hidden">
                 {rows.map((r) => {
                   const s = Number(r.start)
                   const e = Number(r.end)
@@ -1372,14 +1417,14 @@ export default function Editor({ clip, onBack }) {
           </div>
         </div>
 
-        {/* Kolom Kanan: 3 Tab Panel (Gaya & Hook, Subtitle, Export) (lg:col-span-4) */}
-        <div className="flex flex-col gap-4 lg:col-span-4">
-          {/* Tab Navigation */}
-          <div className="grid grid-cols-3 gap-1 rounded-xl border border-line bg-panel/70 p-1">
+        {/* Kolom Kanan: 3 Tab Panel (Lebar Tetap w-[390px], Scrollable) */}
+        <aside className="w-[390px] shrink-0 border-l border-zinc-800 bg-zinc-900/95 flex flex-col h-full overflow-hidden">
+          {/* Tab Navigation Header */}
+          <div className="grid grid-cols-3 gap-1 border-b border-zinc-800 p-2 bg-zinc-950/60 shrink-0">
             {[
               ['style', 'Gaya & Hook'],
               ['subtitle', 'Subtitle'],
-              ['export', 'Export'],
+              ['export', 'Export & Caption'],
             ].map(([tabId, label]) => (
               <button
                 key={tabId}
@@ -1388,7 +1433,7 @@ export default function Editor({ clip, onBack }) {
                 className={`rounded-lg py-2 text-xs font-medium transition ${
                   activeTab === tabId
                     ? 'bg-accent text-void font-bold shadow-sm'
-                    : 'text-muted hover:text-ink hover:bg-panel-2'
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
                 }`}
               >
                 {label}
@@ -1396,196 +1441,270 @@ export default function Editor({ clip, onBack }) {
             ))}
           </div>
 
-          {/* Tab 1: Gaya & Hook */}
-          {activeTab === 'style' && (
-            <div className="space-y-4 rounded-xl border border-line bg-panel/60 p-4">
-              {/* Agent Notes Banner */}
-              {currentClip.edit_config_json?.agent_notes && (() => {
-                const notes = currentClip.edit_config_json.agent_notes
-                const isFallback = String(notes.framing_reason || '').toLowerCase().includes('fallback')
+          {/* Konten Tab Scrollable */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* Tab 1: Gaya & Hook */}
+            {activeTab === 'style' && (
+              <div className="space-y-4">
+                {/* Agent Notes Banner (Ringkas & Collapsible) */}
+                {currentClip.edit_config_json?.agent_notes && (() => {
+                  const notes = currentClip.edit_config_json.agent_notes
+                  const isFallback = String(notes.framing_reason || '').toLowerCase().includes('fallback')
 
-                return (
-                  <div
-                    className={`rounded-lg border p-3 text-xs leading-relaxed ${
-                      isFallback
-                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
-                        : 'border-accent/30 bg-accent/5 text-ink'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-wider font-bold mb-1.5">
-                      <span className={isFallback ? 'text-amber-400' : 'text-accent'}>
-                        {isFallback ? '⚠️ Auto-Editor (Fallback Active)' : '✨ Auto-Editor Agent Decision'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleRunAutoEditor}
-                        disabled={autoEditing}
-                        className="underline text-[10px] hover:text-white"
+                  return (
+                    <div
+                      className={`rounded-lg border text-xs leading-relaxed overflow-hidden ${
+                        isFallback
+                          ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                          : 'border-accent/30 bg-accent/5 text-zinc-200'
+                      }`}
+                    >
+                      <div
+                        onClick={() => setAgentNotesOpen((prev) => !prev)}
+                        className="flex items-center justify-between font-mono text-[10px] uppercase tracking-wider font-bold p-2.5 cursor-pointer hover:bg-white/5 transition"
                       >
-                        {autoEditing ? 'Analisis…' : 'Coba Ulang'}
-                      </button>
+                        <span className={isFallback ? 'text-amber-400' : 'text-accent'}>
+                          {isFallback ? '⚠️ Auto-Editor (Fallback)' : '✨ Auto-Editor Decision'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRunAutoEditor()
+                            }}
+                            disabled={autoEditing}
+                            className="underline text-[10px] hover:text-white"
+                          >
+                            {autoEditing ? 'Analisis…' : 'Coba Ulang'}
+                          </button>
+                          <span>{agentNotesOpen ? '▲' : '▼'}</span>
+                        </div>
+                      </div>
+                      {agentNotesOpen && (
+                        <div className="p-2.5 pt-0 border-t border-white/5 space-y-1">
+                          <p className="text-[11px] leading-snug">
+                            <strong className="text-zinc-100">Framing:</strong> {notes.framing_reason}
+                          </p>
+                          <p className="text-[11px] leading-snug opacity-80">
+                            <strong className="text-zinc-100">Pacing:</strong> {notes.pacing_reason}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-[11px] leading-snug">
-                      <strong>Framing:</strong> {notes.framing_reason}
-                    </p>
-                    <p className="text-[11px] mt-1 leading-snug opacity-80">
-                      <strong>Pacing:</strong> {notes.pacing_reason}
-                    </p>
-                  </div>
-                )
-              })()}
+                  )
+                })()}
 
-              {/* Pilihan Rasio Aspek */}
-              <div>
-                <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
-                  Rasio Aspek Video
-                </p>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[
-                    ['9:16', '9:16'],
-                    ['1:1', '1:1'],
-                    ['4:3', '4:3'],
-                    ['16:9', '16:9'],
-                  ].map(([val, label]) => {
-                    const active = aspectRatio === val
-                    return (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => {
-                          setAspectRatio(val)
+                {/* Pilihan Rasio Aspek */}
+                <div>
+                  <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-400 mb-2 font-semibold">
+                    Rasio Aspek Video
+                  </p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      ['9:16', '9:16'],
+                      ['1:1', '1:1'],
+                      ['4:3', '4:3'],
+                      ['16:9', '16:9'],
+                    ].map(([val, label]) => {
+                      const active = aspectRatio === val
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => {
+                            setAspectRatio(val)
+                            setSaveState('idle')
+                          }}
+                          className={`rounded-lg py-2 text-center text-xs font-mono font-bold transition ${
+                            active
+                              ? 'border border-accent bg-accent/20 text-accent shadow-sm'
+                              : 'border border-zinc-800 bg-zinc-950/50 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Mode Layout (Full Crop vs Blur Background) */}
+                <div className="border-t border-zinc-800/80 pt-3">
+                  <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-400 mb-2 font-semibold">
+                    Mode Tata Letak
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setLayoutMode('full_crop'); setSaveState('idle'); }}
+                      className={`rounded-lg border p-2 text-xs font-medium transition ${
+                        layoutMode === 'full_crop'
+                          ? 'border-accent bg-accent/15 text-accent font-bold'
+                          : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800'
+                      }`}
+                    >
+                      Full Crop (Zoom)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setLayoutMode('blur_bg'); setSaveState('idle'); }}
+                      className={`rounded-lg border p-2 text-xs font-medium transition ${
+                        layoutMode === 'blur_bg'
+                          ? 'border-accent bg-accent/15 text-accent font-bold'
+                          : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800'
+                      }`}
+                    >
+                      Blur Background
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3 Preset 1-Klik */}
+                <div className="border-t border-zinc-800/80 pt-3">
+                  <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-400 mb-2 font-semibold">
+                    Preset Cepat 1-Klik
+                  </p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('hormozi')}
+                      className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 text-center hover:border-accent hover:bg-zinc-800 transition"
+                    >
+                      <span className="block text-xs font-bold text-accent">Hormozi</span>
+                      <span className="text-[10px] text-zinc-500">Full Crop + Bold</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('podcast')}
+                      className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 text-center hover:border-accent hover:bg-zinc-800 transition"
+                    >
+                      <span className="block text-xs font-bold text-ok">Podcast</span>
+                      <span className="text-[10px] text-zinc-500">Blur BG + Clean</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('breaking')}
+                      className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 text-center hover:border-accent hover:bg-zinc-800 transition"
+                    >
+                      <span className="block text-xs font-bold text-fail">Breaking</span>
+                      <span className="text-[10px] text-zinc-500">News Punch</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Hook Banner Input & Font 2 Kolom */}
+                <div className="border-t border-zinc-800/80 pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-400 font-semibold">
+                      Hook Banner Teks
+                    </p>
+                    <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hookBanner.enabled}
+                        onChange={(e) => {
+                          setHookBanner((prev) => ({ ...prev, enabled: e.target.checked }))
                           setSaveState('idle')
                         }}
-                        className={`rounded-lg py-2 text-center text-xs font-mono font-bold transition ${
-                          active
-                            ? 'border border-accent bg-accent/20 text-accent'
-                            : 'border border-line bg-void/50 text-muted hover:border-line-2 hover:bg-panel-2'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    )
-                  })}
+                        className="rounded border-zinc-700"
+                        style={{ accentColor: '#eaa33c' }}
+                      />
+                      Tampilkan
+                    </label>
+                  </div>
+                  {hookBanner.enabled && (
+                    <div className="space-y-2.5">
+                      <input
+                        type="text"
+                        value={hookBanner.text}
+                        onChange={(e) => {
+                          setHookBanner((prev) => ({ ...prev, text: e.target.value.toUpperCase() }))
+                          setSaveState('idle')
+                        }}
+                        placeholder="BANNER HOOK ATAS..."
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs font-bold font-sans text-zinc-100 focus:border-accent focus:outline-none"
+                      />
+
+                      <div>
+                        <span className="block font-mono text-[10px] text-zinc-400 mb-1.5 uppercase tracking-wider font-semibold">
+                          Font Hook Banner (2 Kolom)
+                        </span>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {FONT_OPTIONS.map((f) => {
+                            const active = hookFont === f.key
+                            return (
+                              <button
+                                key={f.key}
+                                type="button"
+                                onClick={() => {
+                                  setHookFont(f.key)
+                                  setSaveState('idle')
+                                }}
+                                style={{ fontFamily: f.family }}
+                                className={`rounded-lg py-2 px-2.5 text-center text-xs truncate transition ${
+                                  active
+                                    ? 'border border-accent bg-accent/20 text-accent font-bold'
+                                    : 'border border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800'
+                                }`}
+                              >
+                                {f.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
+            )}
 
-              {/* Mode Layout (Full Crop vs Blur Background) */}
-              <div className="border-t border-line pt-3">
-                <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
-                  Mode Tata Letak
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setLayoutMode('full_crop'); setSaveState('idle'); }}
-                    className={`rounded-lg border p-2 text-xs font-medium transition ${
-                      layoutMode === 'full_crop'
-                        ? 'border-accent bg-accent/10 text-accent font-bold'
-                        : 'border-line text-muted hover:border-line-2 hover:bg-panel-2'
-                    }`}
-                  >
-                    Full Crop (Zoom)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setLayoutMode('blur_bg'); setSaveState('idle'); }}
-                    className={`rounded-lg border p-2 text-xs font-medium transition ${
-                      layoutMode === 'blur_bg'
-                        ? 'border-accent bg-accent/10 text-accent font-bold'
-                        : 'border-line text-muted hover:border-line-2 hover:bg-panel-2'
-                    }`}
-                  >
-                    Blur Background
-                  </button>
-                </div>
-              </div>
-
-              {/* 3 Preset 1-Klik */}
-              <div className="border-t border-line pt-3">
-                <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
-                  Preset Cepat 1-Klik
-                </p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('hormozi')}
-                    className="rounded-lg border border-line p-2 text-center hover:border-accent hover:bg-panel-2 transition"
-                  >
-                    <span className="block text-xs font-bold text-accent">Hormozi</span>
-                    <span className="text-[10px] text-faint">Full Crop + Bold</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('podcast')}
-                    className="rounded-lg border border-line p-2 text-center hover:border-accent hover:bg-panel-2 transition"
-                  >
-                    <span className="block text-xs font-bold text-ok">Podcast</span>
-                    <span className="text-[10px] text-faint">Blur BG + Clean</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('breaking')}
-                    className="rounded-lg border border-line p-2 text-center hover:border-accent hover:bg-panel-2 transition"
-                  >
-                    <span className="block text-xs font-bold text-fail">Breaking</span>
-                    <span className="text-[10px] text-faint">News Punch</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Hook Banner Input */}
-              <div className="border-t border-line pt-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-mono text-[11px] uppercase tracking-wider text-faint">
-                    Hook Banner Teks
+            {/* Tab 2: Subtitle */}
+            {activeTab === 'subtitle' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-400 font-semibold">
+                    Pengaturan Subtitle
                   </p>
-                  <label className="flex items-center gap-1.5 text-xs text-muted cursor-pointer">
+                  <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={hookBanner.enabled}
+                      checked={subtitle.enabled}
                       onChange={(e) => {
-                        setHookBanner((prev) => ({ ...prev, enabled: e.target.checked }))
+                        setSubtitle((prev) => ({ ...prev, enabled: e.target.checked }))
                         setSaveState('idle')
                       }}
-                      className="rounded border-line"
+                      className="rounded border-zinc-700"
                       style={{ accentColor: '#eaa33c' }}
                     />
-                    Tampilkan
+                    Aktif
                   </label>
                 </div>
-                {hookBanner.enabled && (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value={hookBanner.text}
-                      onChange={(e) => {
-                        setHookBanner((prev) => ({ ...prev, text: e.target.value.toUpperCase() }))
-                        setSaveState('idle')
-                      }}
-                      placeholder="BANNER HOOK ATAS..."
-                      className="w-full rounded-lg border border-line bg-void px-3 py-2 text-xs font-bold font-sans text-ink focus:border-accent focus:outline-none"
-                    />
 
+                {subtitle.enabled && (
+                  <>
+                    {/* Pilihan Font Subtitle (2 Kolom) */}
                     <div>
-                      <span className="block font-mono text-[10px] text-faint mb-1.5 uppercase tracking-wider">
-                        Font Hook Banner
+                      <span className="block font-mono text-[10px] text-zinc-400 mb-1.5 uppercase tracking-wider font-semibold">
+                        Font Subtitle (2 Kolom)
                       </span>
-                      <div className="grid grid-cols-3 gap-1.5">
+                      <div className="grid grid-cols-2 gap-1.5">
                         {FONT_OPTIONS.map((f) => {
-                          const active = hookFont === f.key
+                          const active = subtitleFont === f.key
                           return (
                             <button
                               key={f.key}
                               type="button"
                               onClick={() => {
-                                setHookFont(f.key)
+                                setSubtitleFont(f.key)
                                 setSaveState('idle')
                               }}
                               style={{ fontFamily: f.family }}
-                              className={`rounded py-1.5 px-2 text-center text-xs truncate transition ${
+                              className={`rounded-lg py-2 px-2.5 text-center text-xs truncate transition ${
                                 active
                                   ? 'border border-accent bg-accent/20 text-accent font-bold'
-                                  : 'border border-line bg-void/50 text-muted hover:border-line-2 hover:bg-panel-2'
+                                  : 'border border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800'
                               }`}
                             >
                               {f.label}
@@ -1594,399 +1713,341 @@ export default function Editor({ clip, onBack }) {
                         })}
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
-          {/* Tab 2: Subtitle */}
-          {activeTab === 'subtitle' && (
-            <div className="space-y-4 rounded-xl border border-line bg-panel/60 p-4">
-              <div className="flex items-center justify-between">
-                <p className="font-mono text-[11px] uppercase tracking-wider text-faint">
-                  Pengaturan Subtitle
-                </p>
-                <label className="flex items-center gap-1.5 text-xs text-muted cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={subtitle.enabled}
-                    onChange={(e) => {
-                      setSubtitle((prev) => ({ ...prev, enabled: e.target.checked }))
-                      setSaveState('idle')
-                    }}
-                    className="rounded border-line"
-                    style={{ accentColor: '#eaa33c' }}
-                  />
-                  Aktif
-                </label>
-              </div>
-
-              {subtitle.enabled && (
-                <>
-                  {/* Pilihan Font Subtitle */}
-                  <div>
-                    <span className="block font-mono text-[10px] text-faint mb-1.5 uppercase tracking-wider">
-                      Font Subtitle
-                    </span>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {FONT_OPTIONS.map((f) => {
-                        const active = subtitleFont === f.key
-                        return (
-                          <button
-                            key={f.key}
-                            type="button"
-                            onClick={() => {
-                              setSubtitleFont(f.key)
-                              setSaveState('idle')
-                            }}
-                            style={{ fontFamily: f.family }}
-                            className={`rounded py-1.5 px-2 text-center text-xs truncate transition ${
-                              active
-                                ? 'border border-accent bg-accent/20 text-accent font-bold'
-                                : 'border border-line bg-void/50 text-muted hover:border-line-2 hover:bg-panel-2'
-                            }`}
-                          >
-                            {f.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Posisi Subtitle (Atas, Tengah, Bawah) */}
-                  <div className="border-t border-line/60 pt-3">
-                    <span className="block font-mono text-[10px] text-faint mb-1.5 uppercase tracking-wider">
-                      Posisi Subtitle
-                    </span>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {[
-                        ['top', 'Atas'],
-                        ['middle', 'Tengah'],
-                        ['bottom', 'Bawah'],
-                      ].map(([val, label]) => {
-                        const active = subtitle.position === val
-                        return (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => {
-                              setSubtitle((p) => ({ ...p, position: val }))
-                              setSaveState('idle')
-                            }}
-                            className={`rounded-md py-1.5 text-xs font-medium transition ${
-                              active
-                                ? 'border border-accent bg-accent/15 text-accent font-bold'
-                                : 'border border-line text-muted hover:border-line-2 hover:bg-panel-2'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Ukuran Font Subtitle (Presets + Slider 32..96) */}
-                  <div className="border-t border-line/60 pt-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-mono text-[10px] text-faint uppercase tracking-wider">
-                        Ukuran Font ({subtitleFontSize}px)
+                    {/* Posisi Subtitle (Atas, Tengah, Bawah) */}
+                    <div className="border-t border-zinc-800/80 pt-3">
+                      <span className="block font-mono text-[10px] text-zinc-400 mb-1.5 uppercase tracking-wider font-semibold">
+                        Posisi Subtitle
                       </span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          ['top', 'Atas'],
+                          ['middle', 'Tengah'],
+                          ['bottom', 'Bawah'],
+                        ].map(([val, label]) => {
+                          const active = subtitle.position === val
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => {
+                                setSubtitle((p) => ({ ...p, position: val }))
+                                setSaveState('idle')
+                              }}
+                              className={`rounded-md py-1.5 text-xs font-medium transition ${
+                                active
+                                  ? 'border border-accent bg-accent/15 text-accent font-bold'
+                                  : 'border border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-4 gap-1.5 mb-2">
-                      {[
-                        [44, 'Kecil (44)'],
-                        [64, 'Sedang (64)'],
-                        [78, 'Besar (78)'],
-                        [92, 'Jumbo (92)'],
-                      ].map(([size, label]) => {
-                        const active = subtitleFontSize === size
-                        return (
-                          <button
-                            key={size}
-                            type="button"
-                            onClick={() => {
-                              setSubtitleFontSize(size)
-                              setSaveState('idle')
-                            }}
-                            className={`rounded py-1 text-[11px] font-mono transition ${
-                              active
-                                ? 'border border-accent bg-accent/20 text-accent font-bold'
-                                : 'border border-line bg-void text-muted hover:text-ink'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    <input
-                      type="range"
-                      min="32"
-                      max="96"
-                      step="2"
-                      value={subtitleFontSize}
-                      onChange={(e) => {
-                        setSubtitleFontSize(Number(e.target.value))
-                        setSaveState('idle')
-                      }}
-                      className="w-full accent-accent"
-                    />
-                  </div>
 
-                  {/* Sync Subtitle Offset (-2.0s s/d +2.0s) */}
-                  <div className="border-t border-line/60 pt-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-mono text-[10px] text-faint uppercase tracking-wider">
-                        Sync Subtitle (Offset)
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSubtitle((p) => ({ ...p, offset_sec: 0 }))
-                          setSaveState('idle')
-                        }}
-                        className="text-[10px] font-mono text-accent hover:underline"
-                      >
-                        Reset (0.0s)
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2">
+                    {/* Ukuran Font Subtitle (Presets + Slider 32..96) */}
+                    <div className="border-t border-zinc-800/80 pt-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-mono text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">
+                          Ukuran Font ({subtitleFontSize}px)
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5 mb-2">
+                        {[
+                          [44, 'Kecil'],
+                          [64, 'Sedang'],
+                          [78, 'Besar'],
+                          [92, 'Jumbo'],
+                        ].map(([size, label]) => {
+                          const active = subtitleFontSize === size
+                          return (
+                            <button
+                              key={size}
+                              type="button"
+                              onClick={() => {
+                                setSubtitleFontSize(size)
+                                setSaveState('idle')
+                              }}
+                              className={`rounded py-1 text-[11px] font-mono transition ${
+                                active
+                                  ? 'border border-accent bg-accent/20 text-accent font-bold'
+                                  : 'border border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-zinc-100'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
                       <input
                         type="range"
-                        min="-2"
-                        max="2"
-                        step="0.05"
-                        value={subtitle.offset_sec ?? 0}
+                        min="32"
+                        max="96"
+                        step="2"
+                        value={subtitleFontSize}
                         onChange={(e) => {
-                          const val = round2(Number(e.target.value))
-                          setSubtitle((p) => ({ ...p, offset_sec: val }))
+                          setSubtitleFontSize(Number(e.target.value))
                           setSaveState('idle')
                         }}
-                        className="flex-1 accent-accent"
+                        className="w-full accent-accent"
                       />
-                      <span className="font-mono text-xs text-ink w-14 text-right">
-                        {(subtitle.offset_sec ?? 0) > 0 ? `+${(subtitle.offset_sec ?? 0).toFixed(2)}s` : `${(subtitle.offset_sec ?? 0).toFixed(2)}s`}
+                    </div>
+
+                    {/* Sync Subtitle Offset (-2.0s s/d +2.0s) */}
+                    <div className="border-t border-zinc-800/80 pt-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-mono text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">
+                          Sync Subtitle (Offset)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSubtitle((p) => ({ ...p, offset_sec: 0 }))
+                            setSaveState('idle')
+                          }}
+                          className="text-[10px] font-mono text-accent hover:underline"
+                        >
+                          Reset (0.0s)
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="-2"
+                          max="2"
+                          step="0.05"
+                          value={subtitle.offset_sec ?? 0}
+                          onChange={(e) => {
+                            const val = round2(Number(e.target.value))
+                            setSubtitle((p) => ({ ...p, offset_sec: val }))
+                            setSaveState('idle')
+                          }}
+                          className="flex-1 accent-accent"
+                        />
+                        <span className="font-mono text-xs text-zinc-100 w-14 text-right">
+                          {(subtitle.offset_sec ?? 0) > 0 ? `+${(subtitle.offset_sec ?? 0).toFixed(2)}s` : `${(subtitle.offset_sec ?? 0).toFixed(2)}s`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Warna Subtitle */}
+                    <div className="grid grid-cols-2 gap-2 border-t border-zinc-800/80 pt-3">
+                      <div>
+                        <span className="block font-mono text-[10px] text-zinc-400 mb-1 font-semibold">Warna Teks</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={subtitle.color}
+                            onChange={(e) => {
+                              setSubtitle((p) => ({ ...p, color: e.target.value.toUpperCase() }))
+                              setSaveState('idle')
+                            }}
+                            className="h-7 w-9 rounded cursor-pointer border border-zinc-700 bg-zinc-950"
+                          />
+                          <span className="font-mono text-xs text-zinc-300">{subtitle.color}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="block font-mono text-[10px] text-zinc-400 mb-1 font-semibold">Warna Highlight</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={subtitle.highlight_color}
+                            onChange={(e) => {
+                              setSubtitle((p) => ({ ...p, highlight_color: e.target.value.toUpperCase() }))
+                              setSaveState('idle')
+                            }}
+                            className="h-7 w-9 rounded cursor-pointer border border-zinc-700 bg-zinc-950"
+                          />
+                          <span className="font-mono text-xs text-zinc-300">{subtitle.highlight_color}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Daftar Baris Subtitle Editable (Klik to Seek & Edit Teks) */}
+                    <div className="border-t border-zinc-800/80 pt-3">
+                      <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-400 mb-2 font-semibold">
+                        Edit Cue ({rows.length} Baris)
+                      </p>
+                      <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+                        {rows.map((r) => {
+                          const s = Number(r.start)
+                          const e = Number(r.end)
+                          const effectiveTime = currentTime - (Number(subtitle.offset_sec) || 0)
+                          const isActiveRow = effectiveTime >= s && effectiveTime < e
+
+                          return (
+                            <div
+                              key={r.id}
+                              className={`flex items-center gap-2 rounded-lg border p-1.5 transition ${
+                                isActiveRow
+                                  ? 'border-accent bg-accent/15'
+                                  : 'border-zinc-800 bg-zinc-950/50 hover:border-zinc-700'
+                              }`}
+                            >
+                              {/* Tombol Waktu (Klik to Seek) */}
+                              <button
+                                type="button"
+                                onClick={() => seekTo(s)}
+                                className="shrink-0 rounded bg-zinc-800 px-1.5 py-1 font-mono text-[10px] text-accent hover:bg-accent hover:text-void font-bold transition"
+                                title="Lompat ke detik ini"
+                              >
+                                {formatTime(s)}
+                              </button>
+
+                              {/* Input Teks Langsung */}
+                              <input
+                                type="text"
+                                value={r.text}
+                                onChange={(e) => updateRowText(r.id, e.target.value)}
+                                placeholder="Teks subtitle..."
+                                className="flex-1 min-w-0 bg-transparent text-xs text-zinc-100 outline-none border-b border-transparent focus:border-accent font-sans"
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Tab 3: Export & Caption */}
+            {activeTab === 'export' && (
+              <div className="space-y-4">
+                <div>
+                  <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-400 mb-2 font-semibold">
+                    Ringkasan Render Final
+                  </p>
+                  <div className="space-y-1.5 text-xs text-zinc-400 font-mono rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+                    <div className="flex justify-between">
+                      <span>Format</span>
+                      <span className="text-zinc-100">MP4 (H.264 + AAC)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Rasio Aspek</span>
+                      <span className="text-accent font-bold">{aspectRatio}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tata Letak</span>
+                      <span className="text-zinc-100">{isBlur ? 'Blur Background' : 'Full Crop'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Audio Target</span>
+                      <span className="text-zinc-100">-14 LUFS Broadcast</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Total Durasi</span>
+                      <span className="text-accent font-bold">
+                        {formatTime(totalOutputDuration)}
                       </span>
                     </div>
                   </div>
-
-                  {/* Warna Subtitle */}
-                  <div className="grid grid-cols-2 gap-2 border-t border-line/60 pt-3">
-                    <div>
-                      <span className="block font-mono text-[10px] text-faint mb-1">Warna Teks</span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={subtitle.color}
-                          onChange={(e) => {
-                            setSubtitle((p) => ({ ...p, color: e.target.value.toUpperCase() }))
-                            setSaveState('idle')
-                          }}
-                          className="h-7 w-9 rounded cursor-pointer border border-line bg-void"
-                        />
-                        <span className="font-mono text-xs text-muted">{subtitle.color}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <span className="block font-mono text-[10px] text-faint mb-1">Warna Highlight</span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={subtitle.highlight_color}
-                          onChange={(e) => {
-                            setSubtitle((p) => ({ ...p, highlight_color: e.target.value.toUpperCase() }))
-                            setSaveState('idle')
-                          }}
-                          className="h-7 w-9 rounded cursor-pointer border border-line bg-void"
-                        />
-                        <span className="font-mono text-xs text-muted">{subtitle.highlight_color}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Daftar Baris Subtitle Editable (Klik to Seek & Edit Teks) */}
-                  <div className="border-t border-line pt-3">
-                    <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
-                      Edit Teks Subtitle per Baris Cue ({rows.length} Baris)
-                    </p>
-                    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                      {rows.map((r) => {
-                        const s = Number(r.start)
-                        const e = Number(r.end)
-                        const effectiveTime = currentTime - (Number(subtitle.offset_sec) || 0)
-                        const isActiveRow = effectiveTime >= s && effectiveTime < e
-
-                        return (
-                          <div
-                            key={r.id}
-                            className={`flex items-center gap-2 rounded-lg border p-1.5 transition ${
-                              isActiveRow
-                                ? 'border-accent bg-accent/15'
-                                : 'border-line/70 bg-void/50 hover:border-line'
-                            }`}
-                          >
-                            {/* Tombol Waktu (Klik to Seek) */}
-                            <button
-                              type="button"
-                              onClick={() => seekTo(s)}
-                              className="shrink-0 rounded bg-panel px-1.5 py-1 font-mono text-[10px] text-accent hover:bg-accent hover:text-void font-bold transition"
-                              title="Lompat ke detik ini"
-                            >
-                              {formatTime(s)}
-                            </button>
-
-                            {/* Input Teks Langsung */}
-                            <input
-                              type="text"
-                              value={r.text}
-                              onChange={(e) => updateRowText(r.id, e.target.value)}
-                              placeholder="Teks subtitle..."
-                              className="flex-1 min-w-0 bg-transparent text-xs text-ink outline-none border-b border-transparent focus:border-accent font-sans"
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Tab 3: Export */}
-          {activeTab === 'export' && (
-            <div className="space-y-4 rounded-xl border border-line bg-panel/60 p-4">
-              <div>
-                <p className="font-mono text-[11px] uppercase tracking-wider text-faint mb-2">
-                  Ringkasan Render Final
-                </p>
-                <div className="space-y-1.5 text-xs text-muted font-mono">
-                  <div className="flex justify-between">
-                    <span>Format</span>
-                    <span className="text-ink">MP4 (H.264 + AAC)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Rasio Aspek</span>
-                    <span className="text-accent font-bold">{aspectRatio}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Tata Letak</span>
-                    <span className="text-ink">{isBlur ? 'Blur Background' : 'Full Crop'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Audio Target</span>
-                    <span className="text-ink">-14 LUFS Broadcast</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Total Durasi</span>
-                    <span className="text-accent font-bold">
-                      {formatTime(totalOutputDuration)}
-                    </span>
-                  </div>
                 </div>
-              </div>
 
-              {renderJob && (renderJob.status === 'queued' || renderJob.status === 'rendering') ? (
-                <div className="rounded-lg border border-accent/30 bg-accent/5 p-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-accent font-medium">
-                      {renderJob.status === 'queued' ? 'Menunggu antrean...' : 'Sedang merender video...'}
-                    </span>
-                    <span className="font-mono text-ink font-bold">{renderJob.progress_percent}%</span>
+                {renderJob && (renderJob.status === 'queued' || renderJob.status === 'rendering') ? (
+                  <div className="rounded-lg border border-accent/30 bg-accent/5 p-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-accent font-medium">
+                        {renderJob.status === 'queued' ? 'Menunggu antrean...' : 'Sedang merender video...'}
+                      </span>
+                      <span className="font-mono text-zinc-100 font-bold">{renderJob.progress_percent}%</span>
+                    </div>
+                    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-950">
+                      <div
+                        className="h-full bg-accent transition-[width] duration-300"
+                        style={{ width: `${renderJob.progress_percent}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-void">
-                    <div
-                      className="h-full bg-accent transition-[width] duration-300"
-                      style={{ width: `${renderJob.progress_percent}%` }}
-                    />
+                ) : renderJob?.status === 'done' ? (
+                  <div className="space-y-2">
+                    <a
+                      href={`/api/render-jobs/${renderJob.id}/download`}
+                      download
+                      className={`${BTN_PRIMARY} w-full py-2.5 text-center text-sm font-bold shadow-md`}
+                    >
+                      Unduh Video Final (.MP4)
+                    </a>
+                    <button
+                      type="button"
+                      onClick={handleRender}
+                      className={`${BTN_GHOST} w-full`}
+                    >
+                      Render Ulang
+                    </button>
                   </div>
-                </div>
-              ) : renderJob?.status === 'done' ? (
-                <div className="space-y-2">
-                  <a
-                    href={`/api/render-jobs/${renderJob.id}/download`}
-                    download
-                    className={`${BTN_PRIMARY} w-full py-2 text-center text-sm font-bold`}
-                  >
-                    Unduh Video Final (.MP4)
-                  </a>
+                ) : (
                   <button
                     type="button"
                     onClick={handleRender}
-                    className={`${BTN_GHOST} w-full`}
+                    disabled={renderBusy}
+                    className={`${BTN_PRIMARY} w-full py-2.5 text-sm font-bold shadow-md`}
                   >
-                    Render Ulang
+                    {renderBusy ? 'Memulai Render…' : 'Mulai Render Video Final'}
                   </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleRender}
-                  disabled={renderBusy}
-                  className={`${BTN_PRIMARY} w-full py-2.5 text-sm font-bold`}
-                >
-                  {renderBusy ? 'Memulai Render…' : 'Mulai Render Video Final'}
-                </button>
-              )}
+                )}
 
-              {renderError && (
-                <p role="alert" className="text-xs text-fail">
-                  {renderError}
-                </p>
-              )}
-
-              {/* Panel Rekomendasi Caption (Gen Z + 3 Hashtag) */}
-              <div className="border-t border-line pt-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-mono text-[11px] uppercase tracking-wider text-faint">
-                    Caption Medsos (Gen Z + 3 Hashtags)
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleRegenerateCaption}
-                    disabled={regeneratingCaption}
-                    className="text-[10px] font-mono text-accent hover:underline flex items-center gap-1"
-                  >
-                    {regeneratingCaption ? (
-                      <span className="h-2.5 w-2.5 animate-spin rounded-full border border-accent/40 border-t-accent" />
-                    ) : null}
-                    <span>{regeneratingCaption ? 'Membuat…' : '✨ Buat Ulang'}</span>
-                  </button>
-                </div>
-                <textarea
-                  rows={4}
-                  value={caption}
-                  onChange={(e) => {
-                    setCaption(e.target.value)
-                    setCaptionError(null)
-                    setSaveState('idle')
-                  }}
-                  placeholder="Caption media sosial otomatis..."
-                  className="w-full rounded-lg border border-line bg-void px-3 py-2 text-xs font-sans text-ink focus:border-accent focus:outline-none resize-none leading-relaxed"
-                />
-                {captionError && (
-                  <p role="alert" className="mt-1.5 text-[11px] text-fail leading-snug">
-                    {captionError}
+                {renderError && (
+                  <p role="alert" className="text-xs text-fail">
+                    {renderError}
                   </p>
                 )}
-                <button
-                  type="button"
-                  onClick={handleCopyCaption}
-                  disabled={!caption}
-                  className={`${BTN_GHOST} w-full mt-2 text-xs font-medium flex items-center justify-center gap-1.5`}
-                >
-                  {captionCopied ? (
-                    <span className="text-ok font-bold">✓ Tersalin ke Clipboard!</span>
-                  ) : (
-                    <span>📋 Salin Caption</span>
+
+                {/* Panel Rekomendasi Caption (Gen Z + 3 Hashtag) */}
+                <div className="border-t border-zinc-800/80 pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-400 font-semibold">
+                      Caption Medsos (Gen Z + 3 Tags)
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleRegenerateCaption}
+                      disabled={regeneratingCaption}
+                      className="text-[10px] font-mono text-accent hover:underline flex items-center gap-1"
+                    >
+                      {regeneratingCaption ? (
+                        <span className="h-2.5 w-2.5 animate-spin rounded-full border border-accent/40 border-t-accent" />
+                      ) : null}
+                      <span>{regeneratingCaption ? 'Membuat…' : '✨ Buat Ulang'}</span>
+                    </button>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={caption}
+                    onChange={(e) => {
+                      setCaption(e.target.value)
+                      setCaptionError(null)
+                      setSaveState('idle')
+                    }}
+                    placeholder="Caption media sosial otomatis..."
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs font-sans text-zinc-100 focus:border-accent focus:outline-none resize-none leading-relaxed"
+                  />
+                  {captionError && (
+                    <p role="alert" className="mt-1.5 text-[11px] text-fail leading-snug">
+                      {captionError}
+                    </p>
                   )}
-                </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyCaption}
+                    disabled={!caption}
+                    className={`${BTN_GHOST} w-full mt-2 text-xs font-medium flex items-center justify-center gap-1.5`}
+                  >
+                    {captionCopied ? (
+                      <span className="text-ok font-bold">✓ Tersalin ke Clipboard!</span>
+                    ) : (
+                      <span>📋 Salin Caption</span>
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </aside>
       </div>
     </div>
   )

@@ -206,19 +206,21 @@ web-clipper/
 - `2026-11-21`: Eliminasi bottleneck dual-stream `<video>` pada `blur_bg` dengan memakai 1 `<video>` utama + `<canvas>` snapshot blur, `isSeekingRef` guard pada auto-skip, `AbortController` + debounce 800ms + `withoutMiddleware('throttle')` untuk auto-save `PATCH /api/clips/{id}/config`, serta fallback konfigurasi 9router ke `base_path('../.env')` dan status `502` eksplisit saat `POST /api/clips/{id}/caption` gagal.
 - `2026-11-23`: Perbaikan validasi `422` pada `PATCH /api/clips/{id}/config`: sanitasi awal baris subtitle kosong di backend & frontend, penyesuaian otomatis cue awal video `0.0s` (`end = start + 0.05`), validasi `gte:subtitles.*.start`, formatting pesan error detail spesifik per baris, dan auto-flush save sebelum render export.
 - `2026-11-23`: Virtual Resolution Stage 1080p (`1080x1920`, `1080x1080`, `1440x1080`, `1920x1080`) di frontend diskalakan CSS `scale(stageScale)` agar pixel preview 100% identik dengan PlayRes ASS FFmpeg; MarginV dan font hook banner/subtitle proporsional di `subtitleShift.js`; toggle "Live Preview Editan" vs "Hasil Render MP4".
+- `2026-11-23`: Redesign Studio Editor 3-zona pas 1 layar desktop (`h-screen overflow-hidden`): Header bar `h-14`, Studio Stage dengan radial dot grid + dynamic aspect frame `(boxW, boxH)`, timeline `h-44`, panel kanan `w-[390px]`, font selector 2 kolom, dan collapsible decision banner.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 8 (Live Preview 100% WYSIWYG & Virtual Resolution Stage) — Selesai Penuh
+- **Fase Aktif:** Fase 8 (Studio Editor Redesign & Dynamic Aspect Ratio Box) — Selesai Penuh
 - **Tugas Terakhir Selesai:**
-  - Container aspect ratio responsif berbasis inline `aspectRatio` (`9/16`, `1/1`, `4/3`, `16/9`) dengan virtual resolution canvas 1080p.
-  - Parity penuh video framing (`full_crop` vs `blur_bg` single-stream canvas snapshot), Hook Banner, dan viral subtitles (2-3 kata per baris + keyword highlight `#FFE600`).
-  - Scaling proporsional `subtitleLayout` & `toAss` di `worker/src/subtitleShift.js` untuk resolusi 1:1, 4:3, 16:9, dan 9:16.
-  - Toggle tab "Live Preview Editan" vs "Hasil Render MP4" di Web Editor.
-  - Verifikasi: PHPUnit 44/44 PASS (204 assertions), worker node test 87/87 PASS, frontend build PASS.
+  - Redesign layout Studio Editor menjadi 3 zona bersih muat 1 layar desktop.
+  - Perhitungan dimensi bingkai preview `(boxW, boxH)` presisi terhadap luas stage dan rasio target (`9:16`, `1:1`, `4:3`, `16:9`).
+  - Auto-draw canvas blur background saat video di-pause, seek, canplay, atau timeupdate.
+  - Grid pemilih font 2 kolom untuk mencegah teks font terpotong.
+  - Collapsible agent notes banner di tab pengaturan gaya.
+  - Verifikasi: worker node test 87/87 PASS, frontend build PASS.
 - **Tugas Berikutnya:** Semua perbaikan tuntas dan siap digunakan.
-- **File Terakhir Diubah:** `backend/app/Http/Controllers/Api/ProjectController.php`, `worker/src/subtitleShift.js`, `frontend/src/components/Editor.jsx`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Seluruh test unit & feature PASS: `php artisan test` PASS 44/44, `npm test` (worker) PASS 87/87, `npm run build` PASS.
+- **File Terakhir Diubah:** `frontend/src/components/Editor.jsx`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Seluruh test unit & feature PASS: worker test 87/87 PASS, frontend build PASS.

@@ -420,6 +420,22 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, JS 293.84 kB).
 - **Status:** Selesai.
 
+---
+
+## [2026-11-23] Redesign Studio Web Editor Layout & Dynamic Aspect Box (Fase 8)
+- **Tujuan:** Merombak layout Studio Web Editor menjadi 3 zona bersih yang pas 1 layar desktop (`h-screen overflow-hidden`), menghitung dimensi bingkai video secara presisi `(boxW, boxH)` sesuai rasio aktif, perbaikan auto-render blur background canvas saat pause/seek/load, serta grid font 2-kolom dan collapsible auto-editor decision.
+- **File diubah:**
+  - `frontend/src/components/Editor.jsx`:
+    - Layout 3-zona: Top Header Bar (`h-14`), Kolom Kiri (Studio Stage dengan radial dot grid + Timeline Multi-Cut `h-44`), Kolom Kanan (`w-[390px]` dengan 3 Tab rapi: Gaya & Hook, Subtitle, Export & Caption).
+    - Dynamic Aspect Ratio Box: `boxW` dan `boxH` dihitung eksak terhadap luas stage yang tersedia (`availW`, `availH`), bingkai otomatis ramping untuk 9:16, kotak untuk 1:1, dan melebar untuk 4:3 & 16:9.
+    - Blur Background Layer: canvas snapshot digambar langsung pada event `loadeddata`, `canplay`, `timeupdate`, dan `seeked` (termasuk saat video di-pause), dengan scale 1.18, blur 32px, brightness 0.75.
+    - Grid Font 2-Kolom: nama font `Montserrat`, `Poppins`, `Anton`, `Bebas Neue`, `Oswald`, `Jakarta Sans` tampil penuh tanpa terpotong.
+    - Auto-Editor Decision Banner: collapsible ringkas agar hemat ruang vertikal di panel pengaturan.
+- **Hasil uji:**
+  - `npm test` (worker) — **PASS 87/87**.
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 297.71 kB, CSS 45.09 kB).
+- **Status:** Selesai.
+
 
 
 
