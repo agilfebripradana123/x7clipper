@@ -167,6 +167,21 @@ export default function Editor({ clip, onBack }) {
     return ['9:16', '1:1', '4:3', '16:9'].includes(ar) ? ar : '9:16'
   })
 
+  // Dimensi virtual canvas 1:1 identik dengan FFmpeg PlayRes
+  const virtualDims = useMemo(() => {
+    switch (aspectRatio) {
+      case '1:1':
+        return { w: 1080, h: 1080 }
+      case '4:3':
+        return { w: 1440, h: 1080 }
+      case '16:9':
+        return { w: 1920, h: 1080 }
+      case '9:16':
+      default:
+        return { w: 1080, h: 1920 }
+    }
+  }, [aspectRatio])
+
   const [cropX, setCropX] = useState(() => {
     const c = clip.edit_config_json?.crop_x
     return typeof c === 'number' ? clamp(round3(c), 0, 1) : 0.5
@@ -274,6 +289,12 @@ export default function Editor({ clip, onBack }) {
   const [pollNonce, setPollNonce] = useState(0)
   const [stageSize, setStageSize] = useState({ w: 0, h: 0 })
   const [videoSize, setVideoSize] = useState({ w: 0, h: 0 })
+
+  // Scale factor kanvas virtual ke kontainer preview
+  const stageScale = useMemo(() => {
+    if (!stageSize.w || !virtualDims.w) return 1
+    return stageSize.w / virtualDims.w
+  }, [stageSize.w, virtualDims.w])
 
   const [autoEditing, setAutoEditing] = useState(false)
   const [currentClip, setCurrentClip] = useState(clip)
@@ -794,27 +815,6 @@ export default function Editor({ clip, onBack }) {
       clearTimeout(timer)
     }
   }, [renderJob?.id, renderJob?.status, pollNonce])
-
-  // Dimensi virtual canvas 1:1 identik dengan FFmpeg PlayRes
-  const virtualDims = useMemo(() => {
-    switch (aspectRatio) {
-      case '1:1':
-        return { w: 1080, h: 1080 }
-      case '4:3':
-        return { w: 1440, h: 1080 }
-      case '16:9':
-        return { w: 1920, h: 1080 }
-      case '9:16':
-      default:
-        return { w: 1080, h: 1920 }
-    }
-  }, [aspectRatio])
-
-  // Scale factor kanvas virtual ke kontainer preview
-  const stageScale = useMemo(() => {
-    if (!stageSize.w || !virtualDims.w) return 1
-    return stageSize.w / virtualDims.w
-  }, [stageSize.w, virtualDims.w])
 
   // Subtitle chunking 2-3 kata per baris identik dengan splitViralSubtitles di worker
   const activeViralSub = useMemo(() => {
