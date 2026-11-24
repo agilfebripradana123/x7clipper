@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { refineClipBoundaries } from './boundaryRefiner.js';
+
+export { refineClipBoundaries };
 
 const autoEditSchema = z.object({
   hook_banner_text: z.string().max(100).optional(),
@@ -17,9 +20,16 @@ const clipSchema = z.object({
   auto_edit: autoEditSchema,
 });
 
-/** Validasi respons AI, resolve Segment-ID, lalu tambah safety padding. */
+/** Validasi respons AI, jalankan boundary refiner, resolve Segment-ID, lalu tambah safety padding. */
 export function validateClips(rawClips, segmentMap, videoDuration) {
   if (!Array.isArray(rawClips)) return [];
+
+  // Urutkan daftar segmen untuk boundary refiner
+  const allSegments = Object.entries(segmentMap || {})
+    .map(([id, s]) => ({ id, ...s }))
+    .sort((a, b) => a.start - b.start);
+
+  const idToIndex = new Map(allSegments.map((s, idx) => [s.id, idx]));
 
   const valid = [];
   for (const raw of rawClips) {
@@ -27,9 +37,21 @@ export function validateClips(rawClips, segmentMap, videoDuration) {
     if (!parsed.success) continue;
 
     const clip = parsed.data;
-    const startSegment = segmentMap[clip.start_segment_id];
-    const endSegment = segmentMap[clip.end_segment_id];
+    let startSegment = segmentMap[clip.start_segment_id];
+    let endSegment = segmentMap[clip.end_segment_id];
     if (!startSegment || !endSegment || endSegment.end <= startSegment.start) continue;
+
+    // Haluskan batas awal & akhir jika info segmen lengkap
+    if (allSegments.length > 0 && idToIndex.has(clip.start_segment_id) && idToIndex.has(clip.end_segment_id)) {
+      const origStartIdx = idToIndex.get(clip.start_segment_id);
+      const origEndIdx = idToIndex.get(clip.end_segment_id);
+
+      const refined = refineClipBoundaries(allSegments, origStartIdx, origEndIdx);
+      startSegment = allSegments[refined.startIdx];
+      endSegment = allSegments[refined.endIdx];
+      clip.start_segment_id = startSegment.id;
+      clip.end_segment_id = endSegment.id;
+    }
 
     const start_sec = Math.max(0, startSegment.start - 0.35);
     const end_sec = Math.min(videoDuration, endSegment.end + 0.5);

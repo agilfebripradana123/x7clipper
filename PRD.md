@@ -90,6 +90,10 @@ Sistem mengekstrak transkrip bertimestamp, mengirimkannya ke LLM melalui **9rout
 - **Riwayat Proyek & URL State Persistence:**
   - Riwayat 20 proyek terbaru ditampilkan di halaman utama (judul, status badge, jumlah klip, tombol buka & hapus).
   - URL routing (`/projects/:projectId`, `/projects/:projectId/clips/:clipId`) menjaga state saat refresh halaman (F5) dan auto-resume proses polling (analisis, prepare klip, dan render).
+- **Natural Boundary & Silence Snapping:**
+  - Penanda jeda `[PAUSE Xs]` disisipkan di transkrip untuk memberi batas kalimat alami pada auto-caption tanpa tanda baca.
+  - Boundary refiner memundurkan awal klip jika diawali kata sambung gantung dan memajukan penutup klip jika terputus di tengah kalimat.
+  - Audio silence snapping (`silencedetect`) mencari celah hening bicara pada rentang bantalan (padBefore 2s / padAfter 3s) agar kata pembuka tidak kepotong dan kalimat akhir tuntas.
 
 ### FR-6: Autonomous Auto-Editor Agent (Jalur 1)
 - **Vision Framing Sub-Agent:** Ekstraksi 3 frame sampel ringan (15%, 50%, 85%), evaluasi visual via model vision 9router untuk menentukan `layout_mode` (`full_crop` vs `blur_bg`) dan posisi horizontal `crop_x` (0.0 - 1.0) dengan fallback aman.

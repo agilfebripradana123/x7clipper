@@ -90,8 +90,18 @@ export function parseTranscript(transcriptText) {
   const segmentMap = {};
   const formattedLines = [];
 
-  for (const seg of segments) {
+  for (let idx = 0; idx < segments.length; idx++) {
+    const seg = segments[idx];
     segmentMap[seg.id] = { start: seg.start, end: seg.end, text: seg.text };
+
+    if (idx > 0) {
+      const prevSeg = segments[idx - 1];
+      const pauseSec = Number((seg.start - prevSeg.end).toFixed(2));
+      if (pauseSec >= 0.45) {
+        formattedLines.push(`[PAUSE ${pauseSec}s]`);
+      }
+    }
+
     formattedLines.push(`[${seg.id}|${Math.floor(seg.start)}] ${seg.text}`);
   }
 

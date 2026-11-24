@@ -208,18 +208,24 @@ web-clipper/
 - `2026-11-23`: Virtual Resolution Stage 1080p (`1080x1920`, `1080x1080`, `1440x1080`, `1920x1080`) di frontend diskalakan CSS `scale(stageScale)` agar pixel preview 100% identik dengan PlayRes ASS FFmpeg; MarginV dan font hook banner/subtitle proporsional di `subtitleShift.js`; toggle "Live Preview Editan" vs "Hasil Render MP4".
 - `2026-11-23`: Redesign Studio Editor 3-zona pas 1 layar desktop (`h-screen overflow-hidden`): Header bar `h-14`, Studio Stage dengan radial dot grid + dynamic aspect frame `(boxW, boxH)`, timeline `h-44`, panel kanan `w-[390px]`, font selector 2 kolom, dan collapsible decision banner.
 - `2026-11-23`: Kalibrasi skala font CSS vs libass (`ascender - descender / unitsPerEm`) untuk 6 font viral, header ASS `ScaledBorderAndShadow: yes` & `WrapStyle: 0`, margin padding 40px proporsional, serta CSS `paintOrder: stroke fill` dengan outline dan line-height 1.15 identik.
+- `2026-11-24`: Batas klip natural 3 lapis. (1) `transcript.js` & `chunker.js` menyisipkan `[PAUSE Xs]` bila `gap >= 0.45s` agar LLM melihat batas kalimat walau auto-caption tanpa tanda baca. (2) `boundaryRefiner.js` (`refineClipBoundaries`) dipanggil `validateClips` sebelum resolve detik: awal diawali kata sambung gantung + gap `< 0.5s` -> mundur maks 3 cue sampai gap `>= 0.45s`; akhir diakhiri kata gantung / tanpa tanda baca akhir + gap `< 0.45s` -> maju maks 6 cue (`+12s`). (3) `clipper.js` `snapBoundariesToSilence` pakai `silencedetect=noise=-35dB:d=0.20`: start snap jendela `[-1.5s,+0.4s]` -> `silenceEnd - 0.15s` (fallback `-0.25s`), end snap `[-0.2s,+2.5s]` -> `silenceStart + 0.35s` (fallback `+0.50s`).
+- `2026-11-24`: `clipSegment`/`clipLocalFile` sekarang ambil rentang bantalan dulu (`padBefore 2.0s`, `padAfter 3.0s`, clamp `[0, videoDuration]`), snap ke hening, lalu potong final (`-avoid_negative_ts make_zero -movflags +faststart`). Return berubah jadi `{ clipPath, actualStartSec, actualEndSec, durationSec, sizeBytes }`; `consumer.js` memakai `actualStartSec`/`actualEndSec` untuk `shiftSubtitles` + `cuts`. Opsi `enableSilenceSnap: false` menjaga jalur lama agar test clipper deterministik.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 8 (Kalibrasi Ukuran Font CSS vs libass & Header ASS Parity) — Selesai Penuh
+- **Fase Aktif:** Fase 9 (Natural Clip Boundaries: PAUSE Marker, Boundary Refiner, Silence Snapping) — Selesai Penuh
 - **Tugas Terakhir Selesai:**
-  - Kalibrasi faktor skala metrik font di `worker/src/fonts.js` (`montserrat: 1.562`, `poppins: 1.762`, `anton: 1.7334`, `bebas: 1.300`, `oswald: 1.702`, `jakarta: 1.652`).
-  - Update `worker/src/renderer.js` & `subtitleShift.js` untuk mengalikan `Fontsize` dengan rasio kalibrasi font, menambahkan `ScaledBorderAndShadow: yes` dan `WrapStyle: 0`.
-  - Update `frontend/src/components/Editor.jsx` dengan `paintOrder: 'stroke fill'`, `-webkit-text-stroke`, line-height 1.15, dan padding 40px proporsional.
-  - Verifikasi: worker node test 88/88 PASS, frontend build PASS.
-- **Tugas Berikutnya:** Semua perbaikan tuntas dan siap digunakan.
-- **File Terakhir Diubah:** `worker/src/fonts.js`, `worker/src/renderer.js`, `worker/src/subtitleShift.js`, `frontend/src/components/Editor.jsx`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Seluruh test unit & feature PASS: worker test 88/88 PASS, frontend build PASS.
+  - `worker/src/boundaryRefiner.js` (baru): `refineClipBoundaries(cues, startIdx, endIdx)` guard pembuka (mundur maks 3 cue) + guard penutup (maju maks 6 cue / `+12s`).
+  - `worker/src/transcript.js` & `chunker.js`: sisip `[PAUSE Xs]` bila gap antar cue `>= 0.45s`.
+  - `worker/src/validator.js`: `refineClipBoundaries` dipanggil di `validateClips` sebelum resolve detik.
+  - `worker/src/ninerouter.js`: system prompt aturan Self-Contained Opening + Complete Closing.
+  - `worker/src/clipper.js`: `parseSilencesFromStderr` + `snapBoundariesToSilence` + rentang bantalan (`padBefore 2.0s` / `padAfter 3.0s`) + return `actualStartSec`/`actualEndSec`.
+  - `worker/src/consumer.js`: subtitle & `cuts` memakai `actualStartSec`/`actualEndSec`/`durationSec` hasil snap.
+  - Test baru: `worker/test/boundaryRefiner.test.js` (4 kasus), tes silence parser & snap di `worker/test/clipper.test.js`.
+  - Verifikasi: worker node test 95/95 PASS, frontend build PASS.
+- **Tugas Berikutnya:** Validasi manual 1 video panjang (podcast > 45 menit) untuk konfirmasi awal/akhir klip natural di hasil `prepare_clip`.
+- **File Terakhir Diubah:** `worker/src/boundaryRefiner.js`, `worker/src/transcript.js`, `worker/src/chunker.js`, `worker/src/validator.js`, `worker/src/ninerouter.js`, `worker/src/clipper.js`, `worker/src/consumer.js`, `worker/test/boundaryRefiner.test.js`, `worker/test/clipper.test.js`, `worker/test/validator.test.js`, `PRD.md`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Semua test PASS: worker `npm test` 95/95, backend `php artisan test` 44/44 (204 assertions), frontend `npm run build` PASS. Backend butuh MySQL `127.0.0.1:3307` (`x7clip_test`) hidup (XAMPP MariaDB).

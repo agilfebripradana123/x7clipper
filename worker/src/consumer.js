@@ -172,11 +172,12 @@ export async function prepareClip(job, {
   try {
     await db.markClipPreparing(clip.id);
     const segmentMap = await db.getProjectTranscript(clip.project_id);
-    // Pecah ke format subtitle viral pendek (2-3 kata per baris)
-    const subtitles = shiftSubtitles(Object.values(segmentMap ?? {}), clip.start_sec, clip.end_sec, { viral: true, maxWords: 3 });
-    const clipDur = Number((Number(clip.end_sec) - Number(clip.start_sec)).toFixed(2));
 
     let clipPath;
+    let actualStartSec = clip.start_sec;
+    let actualEndSec = clip.end_sec;
+    let clipDur = Number((Number(clip.end_sec) - Number(clip.start_sec)).toFixed(3));
+
     if (isForce && hasExistingFile) {
       // Lewati download ulang jika file mentah sudah ada
       clipPath = clip.raw_clip_path;
@@ -186,15 +187,32 @@ export async function prepareClip(job, {
       const isLocalUpload = project.source_type === 'upload' && project.local_video_path;
       if (isLocalUpload) {
         const videoAbsPath = resolve(projectRoot, project.local_video_path);
-        ({ clipPath } = await clipLocalFile(videoAbsPath, clip.start_sec, clip.end_sec, {
+        const res = await clipLocalFile(videoAbsPath, clip.start_sec, clip.end_sec, {
           clipId: `clip-${clip.id}`,
-        }));
+          videoDuration: project.duration_sec,
+        });
+        clipPath = res.clipPath;
+        if (typeof res.actualStartSec === 'number' && typeof res.actualEndSec === 'number') {
+          actualStartSec = res.actualStartSec;
+          actualEndSec = res.actualEndSec;
+          clipDur = res.durationSec;
+        }
       } else {
-        ({ clipPath } = await clipSegment(project.youtube_url, clip.start_sec, clip.end_sec, {
+        const res = await clipSegment(project.youtube_url, clip.start_sec, clip.end_sec, {
           clipId: `clip-${clip.id}`,
-        }));
+          videoDuration: project.duration_sec,
+        });
+        clipPath = res.clipPath;
+        if (typeof res.actualStartSec === 'number' && typeof res.actualEndSec === 'number') {
+          actualStartSec = res.actualStartSec;
+          actualEndSec = res.actualEndSec;
+          clipDur = res.durationSec;
+        }
       }
     }
+
+    // Pecah ke format subtitle viral pendek (2-3 kata per baris) menggunakan actualStartSec & actualEndSec
+    const subtitles = shiftSubtitles(Object.values(segmentMap ?? {}), actualStartSec, actualEndSec, { viral: true, maxWords: 3 });
 
     // Jalankan Autonomous Auto-Editor Agent untuk framing visual & semantic pacing
     let agentConfig = null;

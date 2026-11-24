@@ -3,7 +3,19 @@ const WINDOW_SEC = 900;
 const OVERLAP_SEC = 120;
 
 function formatSegments(segments) {
-  return segments.map(({ id, start, text }) => `[${id}|${Math.floor(start)}] ${text}`).join('\n');
+  const lines = [];
+  for (let idx = 0; idx < segments.length; idx++) {
+    const seg = segments[idx];
+    if (idx > 0) {
+      const prev = segments[idx - 1];
+      const pauseSec = Number((seg.start - prev.end).toFixed(2));
+      if (pauseSec >= 0.45) {
+        lines.push(`[PAUSE ${pauseSec}s]`);
+      }
+    }
+    lines.push(`[${seg.id}|${Math.floor(seg.start)}] ${seg.text}`);
+  }
+  return lines.join('\n');
 }
 
 /**

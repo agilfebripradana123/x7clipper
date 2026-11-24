@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { validateClips, deduplicateClips } from '../src/validator.js';
 
 const segmentMap = {
-  S1: { start: 0, end: 8, text: 'a' },
-  S2: { start: 8, end: 16, text: 'b' },
-  S3: { start: 16, end: 24, text: 'c' },
-  S4: { start: 24, end: 32, text: 'd' },
-  S5: { start: 32, end: 40, text: 'e' },
+  S1: { start: 0, end: 8, text: 'Momen awal video dibuka.' },
+  S2: { start: 8, end: 16, text: 'Penjelasan topik pertama.' },
+  S3: { start: 16, end: 24, text: 'Contoh kasus kedua.' },
+  S4: { start: 24, end: 32, text: 'Poin ketiga yang penting.' },
+  S5: { start: 32, end: 40, text: 'Kesimpulan topik pertama selesai.' },
   S6: { start: 40, end: 48, text: 'f' },
   S7: { start: 48, end: 56, text: 'g' },
   S8: { start: 56, end: 64, text: 'h' },

@@ -7,13 +7,18 @@ const SYSTEM_PROMPT = `Kamu adalah AI analis konten video dan Auto-Editor profes
 ATURAN WAJIB:
 1. Output HANYA JSON valid. Tidak boleh ada teks lain di luar JSON.
 2. Gunakan HANYA segment ID yang ada di transkrip (format [S{id}|{detik}]). DILARANG KERAS mengarang ID di luar daftar.
-3. Setiap klip harus punya hook kuat di awal dan penutup yang tuntas sesuai konteks pembahasan (bukan terpotong).
-4. Jika chunk hanya berisi intro, iklan, atau obrolan datar tanpa momen menarik, kembalikan "clips": [].
-5. Untuk setiap klip, buat editorial plan pada "auto_edit":
+3. AWAL KLIP WAJIB JELAS (Self-Contained Opening):
+   - DILARANG memulai klip di tengah kalimat atau dari kata sambung tanpa konteks (seperti "dan", "tapi", "soalnya", "karena", "makanya", "terus", "lalu", "itu").
+   - Pilih "start_segment_id" tepat setelah jeda bicara [PAUSE] atau pada awal kalimat tanya/pernyataan baru yang langsung bisa dipahami penonton baru tanpa menonton bagian video sebelumnya.
+4. AKHIR KLIP WAJIB TUNTAS (Complete Closing):
+   - DILARANG memotong saat pembicara masih menjelaskan, masih di tengah kalimat, atau diakhiri kata sambung gantung (seperti "dan", "tapi", "karena", "jadi", "kalau", "yang").
+   - Perpanjang "end_segment_id" sampai poin, punchline, atau jawaban benar-benar selesai dan diikuti [PAUSE] atau perpindahan topik.
+5. Jika chunk hanya berisi intro, iklan, atau obrolan datar tanpa momen menarik, kembalikan "clips": [].
+6. Untuk setiap klip, buat editorial plan pada "auto_edit":
    - "hook_banner_text": Judul hook punchy maksimal 6 kata (KAPITAL SEMUA) untuk banner atas video.
    - "recommended_layout": "full_crop" (fokus 1 orang/reaksi tajam) atau "blur_bg" (jika konten lebar/grafik/banyak orang).
    - "highlight_keywords": array 3–8 kata kunci penting dari klip tersebut untuk di-highlight warna kontras.
-6. "suggested_caption": Tulis caption media sosial gaya Gen Z Indonesia yang natural, relatable, punchy, dan santai (ada hook/reaksi pembuka relate, pancingan diskusi/komentar, dan diakhiri TEPAT 3 hashtag relevan).
+7. "suggested_caption": Tulis caption media sosial gaya Gen Z Indonesia yang natural, relatable, punchy, dan santai (ada hook/reaksi pembuka relate, pancingan diskusi/komentar, dan diakhiri TEPAT 3 hashtag relevan).
 
 FORMAT OUTPUT:
 {

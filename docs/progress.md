@@ -1,4 +1,4 @@
-# Log Progres Proyek Web Clipper
+﻿# Log Progres Proyek Web Clipper
 
 Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `AGENTS.md`.
 
@@ -476,4 +476,30 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
 
 
 
+
+
+## [2026-11-24] Natural Clip Boundaries: PAUSE Marker, Boundary Refiner, Silence Snapping (Fase 9)
+- **Tujuan:** Hilangkan klip yang mulai kepotong di tengah kalimat dan berhenti mendadak saat pembicara belum selesai.
+- **Lapis 1 - Penanda jeda & refiner batas:**
+  - `worker/src/transcript.js`: `formattedText` kini menyisipkan `[PAUSE Xs]` di antara segmen bila `gap = next.start - prev.end >= 0.45` detik.
+  - `worker/src/chunker.js`: `formatSegments` juga menyisipkan `[PAUSE Xs]` per chunk agar chunk window > 20 menit tetap punya penanda batas.
+  - `worker/src/boundaryRefiner.js` (baru): `refineClipBoundaries(cues, startIdx, endIdx)`.
+    - Guard pembuka: jika cue awal diawali kata sambung gantung (`dan, tapi, tetapi, soalnya, karena, makanya, terus, lalu, akhirnya, itu, gitu, padahal, sedangkan`) dan gap ke cue sebelumnya `< 0.5s`, mundur maks 3 cue sampai ketemu gap `>= 0.45s`.
+    - Guard penutup: jika cue akhir diakhiri kata gantung (`dan, tapi, karena, jadi, terus, kalau, yang, atau, untuk, dengan, di, ke, nah, itu, seperti, kayak`) atau tanpa tanda baca akhir dan gap ke cue berikut `< 0.45s`, maju maks 6 cue / `+12s` sampai ketemu tanda baca akhir atau gap `>= 0.45s`.
+  - `worker/src/validator.js`: `validateClips` memanggil `refineClipBoundaries` sebelum hitung `start_sec`/`end_sec`, lalu menulis balik `start_segment_id`/`end_segment_id` hasil refine.
+- **Lapis 2 - Prompt editorial:**
+  - `worker/src/ninerouter.js`: aturan 3 (Self-Contained Opening) dan aturan 4 (Complete Closing) ditambahkan; larangan mulai dari kata sambung / potong di tengah kalimat; wajib pilih start setelah `[PAUSE]`.
+- **Lapis 3 - Silence snapping & safe tail padding:**
+  - `worker/src/clipper.js`:
+    - `parseSilencesFromStderr(stderr)` parse `silence_start` / `silence_end`.
+    - `snapBoundariesToSilence(videoPath, targetStartOffset, targetEndOffset, { noiseThreshold: '-35dB', minDuration: 0.20 })`: start snap jendela `[-1.5s, +0.4s]` -> `silenceEnd - 0.15s`, fallback `-0.25s`; end snap jendela `[-0.2s, +2.5s]` -> `silenceStart + 0.35s`, fallback `+0.50s`.
+    - `clipSegment` & `clipLocalFile` mengambil rentang bantalan (`padBefore = 2.0s`, `padAfter = 3.0s`, clamp ke durasi video), snap, lalu potong final dengan `-avoid_negative_ts make_zero -movflags +faststart`.
+    - Return berubah menjadi `{ clipPath, actualStartSec, actualEndSec, durationSec, sizeBytes }` (sebelumnya hanya `durationSec`/`sizeBytes`). Opsi `enableSilenceSnap: false` mempertahankan jalur lama untuk test deterministik.
+  - `worker/src/consumer.js`: `shiftSubtitles` dan `cuts` memakai `actualStartSec`/`actualEndSec`/`durationSec` hasil snap; `videoDuration: project.duration_sec` diteruskan ke clipper.
+- **Tes baru:** `worker/test/boundaryRefiner.test.js` (4 kasus), tes `parseSilencesFromStderr` + `snapBoundariesToSilence` (snap & fallback) di `worker/test/clipper.test.js`, fixture `validator.test.js` diberi teks kalimat utuh agar tidak tersentuh refiner.
+- **Hasil uji:**
+  - `npm test` (worker) - **PASS 95/95**.
+  - `php artisan test` (backend) - **PASS 44/44** (204 assertions).
+  - `npm run build` (frontend) - **PASS** (33 modules, JS 297.91 kB, CSS 45.04 kB).
+- **Status:** Selesai.
 
