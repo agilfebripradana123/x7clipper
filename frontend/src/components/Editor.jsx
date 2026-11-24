@@ -894,7 +894,7 @@ export default function Editor({ clip, onBack }) {
 
   const bannerVirtualFontSize = useMemo(() => {
     const scale = virtualDims.w / 1080
-    return Math.round(54 * scale)
+    return Math.round(56 * scale)
   }, [virtualDims.w])
 
   const subtitleVirtualFontSize = useMemo(() => {
@@ -1172,9 +1172,11 @@ export default function Editor({ clip, onBack }) {
                   {/* Hook Banner Live Preview (Identik Style: Banner di FFmpeg) */}
                   {hookBanner.enabled && hookBanner.text && (
                     <div
-                      className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-10"
+                      className="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
                       style={{
                         top: `${bannerVirtualMarginV}px`,
+                        paddingLeft: `${Math.round(40 * (virtualDims.w / 1080))}px`,
+                        paddingRight: `${Math.round(40 * (virtualDims.w / 1080))}px`,
                       }}
                     >
                       <span
@@ -1186,9 +1188,12 @@ export default function Editor({ clip, onBack }) {
                           textTransform: 'uppercase',
                           textAlign: 'center',
                           lineHeight: 1.15,
-                          textShadow:
-                            '0 0 8px #000, 3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 0 3px 0 #000, 0 -3px 0 #000, 3px 0 0 #000, -3px 0 0 #000',
-                          WebkitTextStroke: '2px #000000',
+                          letterSpacing: '0px',
+                          maxWidth: '100%',
+                          wordBreak: 'break-word',
+                          paintOrder: 'stroke fill',
+                          WebkitTextStroke: `${Math.round(4 * (virtualDims.w / 1080))}px #000000`,
+                          textShadow: '0 0 4px #000, 2px 2px 4px rgba(0,0,0,0.85)',
                         }}
                       >
                         {hookBanner.text}
@@ -1199,7 +1204,7 @@ export default function Editor({ clip, onBack }) {
                   {/* Viral Subtitle Live Preview (Identik Style: Default di FFmpeg) */}
                   {activeViralSub && (
                     <div
-                      className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-10"
+                      className="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
                       style={{
                         top: subtitle.position === 'top'
                           ? `${subtitleVirtualMarginV}px`
@@ -1208,6 +1213,8 @@ export default function Editor({ clip, onBack }) {
                             : 'auto',
                         bottom: subtitle.position === 'bottom' ? `${subtitleVirtualMarginV}px` : 'auto',
                         transform: subtitle.position === 'middle' ? 'translateY(-50%)' : 'none',
+                        paddingLeft: `${Math.round(40 * (virtualDims.w / 1080))}px`,
+                        paddingRight: `${Math.round(40 * (virtualDims.w / 1080))}px`,
                       }}
                     >
                       <div
@@ -1216,11 +1223,14 @@ export default function Editor({ clip, onBack }) {
                           fontWeight: 800,
                           fontSize: `${subtitleVirtualFontSize}px`,
                           textAlign: 'center',
-                          lineHeight: 1.2,
+                          lineHeight: 1.15,
+                          letterSpacing: '0px',
                           textTransform: 'uppercase',
-                          textShadow:
-                            '0 0 10px #000, 4px 4px 0 #000, -4px -4px 0 #000, 4px -4px 0 #000, -4px 4px 0 #000, 0 4px 0 #000, 0 -4px 0 #000, 4px 0 0 #000, -4px 0 0 #000',
-                          WebkitTextStroke: '2.5px #000000',
+                          maxWidth: '100%',
+                          wordBreak: 'break-word',
+                          paintOrder: 'stroke fill',
+                          WebkitTextStroke: `${Math.round(6 * (virtualDims.w / 1080))}px #000000`,
+                          textShadow: '0 0 4px #000, 2px 2px 4px rgba(0,0,0,0.85)',
                         }}
                       >
                         {activeViralSub.text.split(/\s+/).map((word, wIdx) => {

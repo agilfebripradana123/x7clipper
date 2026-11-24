@@ -163,7 +163,7 @@ test('renderClip menulis ASS, menjalankan ffmpeg, dan melaporkan progres', async
   assert.ok(written[0].path.endsWith('clip-5-render-9.ass'));
   assert.ok(written[0].content.includes('PlayResX: 1080'));
   assert.ok(written[0].content.includes('Alignment,2') === false);
-  assert.ok(written[0].content.includes(',8,20,20,160,1'));
+  assert.ok(written[0].content.includes(',8,40,40,160,1'));
   assert.ok(written[0].content.includes('&H0066E0FF'));
   assert.deepEqual(progress, [50, 100]);
   assert.ok(result.outputPath.endsWith('clip-5-render-9.mp4'));
@@ -203,7 +203,7 @@ test('renderClip dengan hook_banner bebas artefak 12)} dan aman terhadap karakte
   assert.ok(!assText.includes('{TEST'));
   assert.ok(!assText.includes('\\pos('));
   // Style top dengan banner harus memiliki MarginV 340
-  assert.ok(assText.includes(',8,20,20,340,1'));
+  assert.ok(assText.includes(',8,40,40,340,1'));
 });
 
 test('renderClip membedakan Fontname antara hook_font dan subtitle_font serta escape fontsdir Windows', async () => {
@@ -234,8 +234,12 @@ test('renderClip membedakan Fontname antara hook_font dan subtitle_font serta es
     });
 
     const ass = written[0].content;
-    assert.ok(ass.includes('Style: Default,Poppins Black,64'));
-    assert.ok(ass.includes('Style: Banner,Anton,54'));
+    // Poppins scaleFactor 1.762 -> Math.round(64 * 1.762) = 113
+    assert.ok(ass.includes('Style: Default,Poppins Black,113'));
+    // Anton scaleFactor 1.7334 -> Math.round(56 * 1.7334) = 97
+    assert.ok(ass.includes('Style: Banner,Anton,97'));
+    assert.ok(ass.includes('ScaledBorderAndShadow: yes'));
+    assert.ok(ass.includes('WrapStyle: 0'));
 
     // Verifikasi escaping fontsdir Windows D:\... -> D\:/...
     const filter = buildFilters({
@@ -246,6 +250,55 @@ test('renderClip membedakan Fontname antara hook_font dan subtitle_font serta es
     assert.ok(filter.includes("fontsdir='D\\:/storage/fonts'"));
   } finally {
     if (oldFont !== undefined) process.env.SUBTITLE_FONT = oldFont;
+  }
+});
+
+test('renderClip menulis ASS dengan PlayRes dinamis dan kalibrasi metrik font untuk semua aspect ratio', async () => {
+  const ratios = ['9:16', '1:1', '4:3', '16:9'];
+  const expectedDims = {
+    '9:16': { w: 1080, h: 1920 },
+    '1:1': { w: 1080, h: 1080 },
+    '4:3': { w: 1440, h: 1080 },
+    '16:9': { w: 1920, h: 1080 },
+  };
+
+  for (const ar of ratios) {
+    const written = [];
+    await renderClip({
+      clip: CLIP,
+      renderJobId: 200,
+      config: {
+        trim_start: 0,
+        trim_end: 5,
+        aspect_ratio: ar,
+        hook_font: 'anton',
+        subtitle_font: 'montserrat',
+        hook_banner: { enabled: true, text: 'HOOK' },
+        subtitle: { enabled: true, position: 'bottom', font_size: 64 },
+      },
+      subtitles: [{ start: 0, end: 2, text: 'TEKS' }],
+      outputDir: 'D:\\temp\\exports',
+      tempDir: 'D:\\temp\\tmp',
+      makeDir: async () => {},
+      write: async (path, content) => written.push({ path, content }),
+      remove: async () => {},
+      spawnFn: fakeSpawn({ stdout: ['out_time_ms=5000000'] }),
+    });
+
+    const ass = written[0].content;
+    const { w, h } = expectedDims[ar];
+    assert.ok(ass.includes(`PlayResX: ${w}`));
+    assert.ok(ass.includes(`PlayResY: ${h}`));
+    assert.ok(ass.includes('ScaledBorderAndShadow: yes'));
+    assert.ok(ass.includes('WrapStyle: 0'));
+
+    // Montserrat scaleFactor 1.562: Math.round((w / 1080) * 64 * 1.562)
+    const expectedSubSize = Math.round((w / 1080) * 64 * 1.562);
+    assert.ok(ass.includes(`Style: Default,Montserrat ExtraBold,${expectedSubSize}`));
+
+    // Anton scaleFactor 1.7334: Math.round((w / 1080) * 56 * 1.7334)
+    const expectedBannerSize = Math.round((w / 1080) * 56 * 1.7334);
+    assert.ok(ass.includes(`Style: Banner,Anton,${expectedBannerSize}`));
   }
 });
 

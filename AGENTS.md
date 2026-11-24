@@ -207,20 +207,19 @@ web-clipper/
 - `2026-11-23`: Perbaikan validasi `422` pada `PATCH /api/clips/{id}/config`: sanitasi awal baris subtitle kosong di backend & frontend, penyesuaian otomatis cue awal video `0.0s` (`end = start + 0.05`), validasi `gte:subtitles.*.start`, formatting pesan error detail spesifik per baris, dan auto-flush save sebelum render export.
 - `2026-11-23`: Virtual Resolution Stage 1080p (`1080x1920`, `1080x1080`, `1440x1080`, `1920x1080`) di frontend diskalakan CSS `scale(stageScale)` agar pixel preview 100% identik dengan PlayRes ASS FFmpeg; MarginV dan font hook banner/subtitle proporsional di `subtitleShift.js`; toggle "Live Preview Editan" vs "Hasil Render MP4".
 - `2026-11-23`: Redesign Studio Editor 3-zona pas 1 layar desktop (`h-screen overflow-hidden`): Header bar `h-14`, Studio Stage dengan radial dot grid + dynamic aspect frame `(boxW, boxH)`, timeline `h-44`, panel kanan `w-[390px]`, font selector 2 kolom, dan collapsible decision banner.
+- `2026-11-23`: Kalibrasi skala font CSS vs libass (`ascender - descender / unitsPerEm`) untuk 6 font viral, header ASS `ScaledBorderAndShadow: yes` & `WrapStyle: 0`, margin padding 40px proporsional, serta CSS `paintOrder: stroke fill` dengan outline dan line-height 1.15 identik.
 - *(Agent: tambahkan catatan keputusan baru atau temuan bug penting di baris bawah ini)*
 
 ---
 
 ## 6. Status Terakhir & Handoff Log
 
-- **Fase Aktif:** Fase 8 (Studio Editor Redesign & Dynamic Aspect Ratio Box) — Selesai Penuh
+- **Fase Aktif:** Fase 8 (Kalibrasi Ukuran Font CSS vs libass & Header ASS Parity) — Selesai Penuh
 - **Tugas Terakhir Selesai:**
-  - Redesign layout Studio Editor menjadi 3 zona bersih muat 1 layar desktop.
-  - Perhitungan dimensi bingkai preview `(boxW, boxH)` presisi terhadap luas stage dan rasio target (`9:16`, `1:1`, `4:3`, `16:9`).
-  - Auto-draw canvas blur background saat video di-pause, seek, canplay, atau timeupdate.
-  - Grid pemilih font 2 kolom untuk mencegah teks font terpotong.
-  - Collapsible agent notes banner di tab pengaturan gaya.
-  - Verifikasi: worker node test 87/87 PASS, frontend build PASS.
+  - Kalibrasi faktor skala metrik font di `worker/src/fonts.js` (`montserrat: 1.562`, `poppins: 1.762`, `anton: 1.7334`, `bebas: 1.300`, `oswald: 1.702`, `jakarta: 1.652`).
+  - Update `worker/src/renderer.js` & `subtitleShift.js` untuk mengalikan `Fontsize` dengan rasio kalibrasi font, menambahkan `ScaledBorderAndShadow: yes` dan `WrapStyle: 0`.
+  - Update `frontend/src/components/Editor.jsx` dengan `paintOrder: 'stroke fill'`, `-webkit-text-stroke`, line-height 1.15, dan padding 40px proporsional.
+  - Verifikasi: worker node test 88/88 PASS, frontend build PASS.
 - **Tugas Berikutnya:** Semua perbaikan tuntas dan siap digunakan.
-- **File Terakhir Diubah:** `frontend/src/components/Editor.jsx`, `docs/progress.md`, `AGENTS.md`.
-- **Blocker / Catatan:** Seluruh test unit & feature PASS: worker test 87/87 PASS, frontend build PASS.
+- **File Terakhir Diubah:** `worker/src/fonts.js`, `worker/src/renderer.js`, `worker/src/subtitleShift.js`, `frontend/src/components/Editor.jsx`, `docs/progress.md`, `AGENTS.md`.
+- **Blocker / Catatan:** Seluruh test unit & feature PASS: worker test 88/88 PASS, frontend build PASS.

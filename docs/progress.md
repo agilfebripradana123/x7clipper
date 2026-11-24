@@ -436,6 +436,37 @@ Dokumentasi jejak eksekusi setiap fase sesuai spesifikasi `PRD.md` dan panduan `
   - `npm run build` (frontend) — **PASS** (33 modules, JS 297.71 kB, CSS 45.09 kB).
 - **Status:** Selesai.
 
+---
+
+## [2026-11-23] Kalibrasi Skala Font CSS vs libass & Header ASS Parity (Fase 8)
+- **Tujuan:** Menyelaraskan ukuran visual font subtitle dan hook banner antara Live Preview browser dan hasil render FFmpeg (`libass`). `libass` menggunakan skala baris `ascender - descender` (bukan EM/cap-height seperti CSS), sehingga teks di FFmpeg sebelumnya tampak lebih kecil ~35-43% dibanding preview.
+- **File diubah:**
+  - `worker/src/fonts.js`:
+    - Menambahkan rasio kalibrasi `scaleFactor` terukur dari tabel `head` dan `OS/2` / `hhea` untuk ke-6 font viral:
+      - `montserrat`: 1.562 (`1562 / 1000`)
+      - `poppins`: 1.762 (`1762 / 1000`)
+      - `anton`: 1.7334 (`3550 / 2048`)
+      - `bebas`: 1.300 (`1300 / 1000`)
+      - `oswald`: 1.702 (`1702 / 1000`)
+      - `jakarta`: 1.652 (`1652 / 1000`)
+    - Menambahkan fungsi `getFontScaleFactor(fontKey)`.
+  - `worker/src/subtitleShift.js`:
+    - Header ASS `[Script Info]` sekarang menyertakan `ScaledBorderAndShadow: yes` dan `WrapStyle: 0`.
+    - Parameter style diperbarui: `marginL: 40, marginR: 40`, `outline: 4`, `shadow: 2`.
+    - `bannerFontSize` didukung langsung melalui argumen pemanggil.
+  - `worker/src/renderer.js`:
+    - `assFontSize` dikalikan dengan `subScaleFactor` (`getFontScaleFactor(subtitleFontKey)`).
+    - `assBannerFontSize` dikalikan dengan `hookScaleFactor` (`getFontScaleFactor(hookFontKey)`).
+  - `frontend/src/components/Editor.jsx`:
+    - Menambahkan CSS `paintOrder: 'stroke fill'` pada teks subtitle dan hook banner agar stroke hitam digambar di luar huruf seperti `libass`.
+    - Padding kiri/kanan teks `40px` (proporsional terhadap resolusi PlayResX), `lineHeight: 1.15`, `letterSpacing: '0px'`, `maxWidth: '100%'`, dan `wordBreak: 'break-word'` untuk kesamaan titik line wrapping.
+  - `worker/test/renderer.test.js`:
+    - Tes kalibrasi `Fontsize` untuk semua aspect ratio (`9:16`, `1:1`, `4:3`, `16:9`) dan validasi header ASS (`ScaledBorderAndShadow: yes`, `WrapStyle: 0`).
+- **Hasil uji:**
+  - `npm test` (worker) — **PASS 88/88**.
+  - `npm run build` (frontend) — **PASS** (33 modules, JS 297.91 kB, CSS 45.04 kB).
+- **Status:** Selesai.
+
 
 
 

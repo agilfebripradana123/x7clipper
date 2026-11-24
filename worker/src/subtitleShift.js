@@ -201,9 +201,14 @@ export function toAss(subtitles, {
   fontSize = 42,
   alignment = 2,
   marginV = 240,
+  marginL = 40,
+  marginR = 40,
+  outline = 4,
+  shadow = 2,
   offsetSec = 0,
   bannerText = null,
   bannerFontName = null,
+  bannerFontSize = null,
   bannerDurationSec = 0,
   primaryColour = '&H00FFFFFF',
   highlightColour = '&H0000E6FF', // Kuning terang ASS (&HAABBGGRR)
@@ -214,20 +219,22 @@ export function toAss(subtitles, {
   const cleanBanner = bannerText ? sanitizeAssText(bannerText).toUpperCase() : null;
   const bannerScale = Number(playResY) > 0 ? Number(playResY) / 1920 : 1;
   const bannerMarginV = Math.round(120 * bannerScale);
-  const bannerFontSize = Math.round(54 * (Number(playResX) > 0 ? Number(playResX) / 1080 : 1));
+  const bFontSize = bannerFontSize ?? Math.round(56 * (Number(playResX) > 0 ? Number(playResX) / 1080 : 1));
   const bFont = bannerFontName || 'Anton';
   const bannerStyle = cleanBanner
-    ? `Style: Banner,${bFont},${bannerFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,8,40,40,${bannerMarginV},1\n`
+    ? `Style: Banner,${bFont},${bFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,8,40,40,${bannerMarginV},1\n`
     : '';
 
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${playResX}
 PlayResY: ${playResY}
+ScaledBorderAndShadow: yes
+WrapStyle: 0
 
 [V4+ Styles]
 Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
-Style: Default,${fontName},${fontSize},${primaryColour},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,${alignment},20,20,${marginV},1
+Style: Default,${fontName},${fontSize},${primaryColour},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,${outline},${shadow},${alignment},${marginL},${marginR},${marginV},1
 ${bannerStyle}
 [Events]
 Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text`;

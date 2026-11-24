@@ -12,6 +12,8 @@ export const VIRAL_FONTS = {
     file: 'Montserrat-ExtraBold.ttf',
     fontName: 'Montserrat ExtraBold',
     cssFamily: "'Montserrat ExtraBold', 'Montserrat', sans-serif",
+    // usWinAscent (1109) + usWinDescent (453) = 1562, unitsPerEm = 1000
+    scaleFactor: 1.562,
   },
   poppins: {
     key: 'poppins',
@@ -19,6 +21,8 @@ export const VIRAL_FONTS = {
     file: 'Poppins-Black.ttf',
     fontName: 'Poppins Black',
     cssFamily: "'Poppins Black', 'Poppins', sans-serif",
+    // usWinAscent (1135) + usWinDescent (627) = 1762, unitsPerEm = 1000
+    scaleFactor: 1.762,
   },
   anton: {
     key: 'anton',
@@ -26,6 +30,8 @@ export const VIRAL_FONTS = {
     file: 'Anton-Regular.ttf',
     fontName: 'Anton',
     cssFamily: "'Anton', sans-serif",
+    // usWinAscent (2876) + usWinDescent (674) = 3550, unitsPerEm = 2048 -> 3550 / 2048 = 1.7334
+    scaleFactor: 1.7334,
   },
   bebas: {
     key: 'bebas',
@@ -33,13 +39,17 @@ export const VIRAL_FONTS = {
     file: 'BebasNeue-Regular.ttf',
     fontName: 'Bebas Neue',
     cssFamily: "'Bebas Neue', sans-serif",
+    // usWinAscent (950) + usWinDescent (350) = 1300, unitsPerEm = 1000
+    scaleFactor: 1.3,
   },
   oswald: {
     key: 'oswald',
     label: 'Oswald Bold',
-    file: 'Oswald',
+    file: 'Oswald-Bold.ttf',
     fontName: 'Oswald',
     cssFamily: "'Oswald', sans-serif",
+    // usWinAscent (1325) + usWinDescent (377) = 1702, unitsPerEm = 1000
+    scaleFactor: 1.702,
   },
   jakarta: {
     key: 'jakarta',
@@ -47,8 +57,21 @@ export const VIRAL_FONTS = {
     file: 'PlusJakartaSans-ExtraBold.ttf',
     fontName: 'Plus Jakarta Sans ExtraBold',
     cssFamily: "'Plus Jakarta Sans ExtraBold', 'Plus Jakarta Sans', sans-serif",
+    // usWinAscent (1296) + usWinDescent (356) = 1652, unitsPerEm = 1000
+    scaleFactor: 1.652,
   },
 };
+
+/**
+ * Ambil rasio kalibrasi (ascender - descender) / unitsPerEm untuk font tertentu.
+ * Digunakan agar libass Fontsize menghasilkan visual cap-height yang sama persis
+ * dengan CSS font-size: Npx di browser.
+ */
+export function getFontScaleFactor(fontKey) {
+  if (!fontKey) return 1.562;
+  const key = String(fontKey).toLowerCase().trim();
+  return VIRAL_FONTS[key]?.scaleFactor || 1.562;
+}
 
 /**
  * Baca tabel 'name' OpenType langsung dari buffer TTF untuk mendapatkan

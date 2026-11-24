@@ -7,7 +7,7 @@ import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { toAss, assColour, assTime, subtitleLayout, sanitizeAssText } from './subtitleShift.js';
-import { getFontNameFromFile, resolveFontName } from './fonts.js';
+import { getFontNameFromFile, resolveFontName, getFontScaleFactor } from './fonts.js';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const defaultOutputDir = resolve(projectRoot, 'storage/exports');
@@ -267,7 +267,6 @@ export async function renderClip({
     const layout = subtitleLayout(position, Boolean(hookText), dims.height);
     const offsetSec = clamp(Number(config.subtitle_offset_sec ?? subtitleConfig.offset_sec ?? 0) || 0, -2, 2);
     const rawFontSize = clamp(Number(config.subtitle_font_size ?? subtitleConfig.font_size ?? 64) || 64, 32, 96);
-    const assFontSize = Math.round((dims.width / 1080) * rawFontSize);
 
     const activeSubtitles = (Array.isArray(config.edited_subtitles) && config.edited_subtitles.length > 0)
       ? config.edited_subtitles
@@ -280,10 +279,23 @@ export async function renderClip({
     const hookFontName = await getFontNameFromFile(hookFontKey, defaultFontsDir);
     const subtitleFontName = await getFontNameFromFile(subtitleFontKey, defaultFontsDir);
 
+    // Kalibrasi ukuran font: sesuaikan dengan rasio (ascender - descender) / unitsPerEm font
+    // agar visual cap-height libass 100% sama dengan CSS font-size di canvas virtual React.
+    const subScaleFactor = getFontScaleFactor(subtitleFontKey);
+    const hookScaleFactor = getFontScaleFactor(hookFontKey);
+
+    const targetWidth = dims.width;
+    const baseSubSize = (targetWidth / 1080) * rawFontSize;
+    const assFontSize = Math.round(baseSubSize * subScaleFactor);
+
+    const baseBannerSize = (targetWidth / 1080) * 56;
+    const assBannerFontSize = Math.round(baseBannerSize * hookScaleFactor);
+
     const assContent = toAss(useSubtitles ? activeSubtitles : [], {
       fontName: process.env.SUBTITLE_FONT || subtitleFontName,
       bannerFontName: hookFontName,
       fontSize: assFontSize,
+      bannerFontSize: assBannerFontSize,
       alignment: layout.alignment,
       marginV: layout.marginV,
       offsetSec,
